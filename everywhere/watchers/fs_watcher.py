@@ -1,6 +1,5 @@
 """Basic filesystem watcher."""
 
-import os
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Self
@@ -8,8 +7,7 @@ from typing import Self
 import polars as pl
 from pydantic import Field, model_validator
 
-from ..common.pydantic import FrozenBaseModel
-from .watcher import EventType, WatchEvent
+from ..common.pydantic import EventType, FrozenBaseModel, WatchEvent
 
 
 class FSWatcher(FrozenBaseModel):
@@ -26,7 +24,7 @@ class FSWatcher(FrozenBaseModel):
         assert self.fs_path.is_dir()
         return self
 
-    def update(self) -> Iterable[WatchEvent[Path]]:
+    def update(self) -> Iterable[WatchEvent]:
         """Update the database and return all invalidated paths."""
         if self.db_path is None or not self.db_path.exists():
             old_df = pl.DataFrame(
@@ -39,9 +37,9 @@ class FSWatcher(FrozenBaseModel):
         else:
             old_df = pl.read_parquet(self.db_path)
 
-        scanned_files = (p for p in os.scandir(self.fs_path) if p.is_file())
+        scanned_files = (p for p in self.fs_path.rglob("*") if p.is_file())
         new_rows = [
-            ({"path": path.path, "size": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns})
+            ({"path": str(path), "size": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns})
             for path in scanned_files
         ]
         new_df = pl.DataFrame(new_rows, schema={"path": pl.Utf8, "size": pl.Int64, "mtime_ns": pl.Int64})

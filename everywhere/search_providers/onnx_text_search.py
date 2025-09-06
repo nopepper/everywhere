@@ -10,8 +10,8 @@ from onnxruntime import InferenceSession
 from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
-from ..watchers.watcher import EventType, WatchEvent
-from .search_provider import SearchProvider, SearchQuery, SearchResult
+from ..common.pydantic import EventType, SearchQuery, SearchResult, WatchEvent
+from .search_provider import SearchProvider
 
 
 # Mean Pooling - Take attention mask into account for correct averaging
@@ -23,10 +23,10 @@ def _mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> n
 
 
 def _similarity(obj1: np.ndarray, obj2: np.ndarray) -> float:
-    return float(np.dot(obj1, obj2) / (np.linalg.norm(obj1) * np.linalg.norm(obj2)))
+    return (float(np.dot(obj1, obj2) / (np.linalg.norm(obj1) * np.linalg.norm(obj2))) + 1) / 2
 
 
-class ONNXTextSearchProvider(SearchProvider[str, Path]):
+class ONNXTextSearchProvider(SearchProvider):
     """ONNX Text Embedder."""
 
     onnx_model_path: Path = Field(description="Path to the ONNX model.")
@@ -52,7 +52,7 @@ class ONNXTextSearchProvider(SearchProvider[str, Path]):
 
     def embed(self, text: list[str]) -> np.ndarray:
         """Embed text."""
-        batch = self.tokenizer(text, padding=True, truncation=True, return_tensors="np")
+        batch = cast("dict[str, np.ndarray]", self.tokenizer(text, padding=True, truncation=True, return_tensors="np"))
         embs = self.session.run(
             None,
             {
@@ -64,9 +64,9 @@ class ONNXTextSearchProvider(SearchProvider[str, Path]):
         embs = cast("np.ndarray", embs)
         if len(embs.shape) == 1:
             embs = embs.reshape(1, -1)
-        return _mean_pooling(embs, batch.attention_mask)
+        return _mean_pooling(embs, batch["attention_mask"])
 
-    def on_change(self, event: WatchEvent[Path]) -> None:
+    def on_change(self, event: WatchEvent) -> None:
         """Handle a change event."""
         if event.event_type == EventType.REMOVED:
             self._index.pop(event.value, None)
@@ -78,11 +78,11 @@ class ONNXTextSearchProvider(SearchProvider[str, Path]):
             text_chunks = [text[i : i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
             self._index[path] = self.embed(text_chunks)
 
-    def search(self, query: SearchQuery[str]) -> Iterable[SearchResult[Path]]:
+    def search(self, query: SearchQuery) -> Iterable[SearchResult]:
         """Search for a query."""
         results = []
         query_embedding = self.embed([query.text])[0]
         for path, embeddings in self._index.items():
             similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
-            results.append(SearchResult(data=path, confidence=similarity))
+            results.append(SearchResult(value=path, confidence=similarity))
         return results
