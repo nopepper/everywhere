@@ -1,0 +1,18 @@
+{
+    "python.testing.pytestArgs": [
+        "."
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "evenBetterToml.taplo.configFile.path": ".vscode/.taplo.toml",
+    "evenBetterToml.taplo.configFile.enabled": true,
+    "cursorpyright.analysis.typeCheckingMode": "basic",
+    "cursorpyright.analysis.include": [
+        "notebooks",
+        "everywhere",
+    ],
+    "cursorpyright.analysis.exclude": [
+        ".venv",
+        "models",
+    ]
+}

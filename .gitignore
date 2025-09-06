@@ -1,3 +1,7 @@
+# data / models
+data/
+models/
+
 # Python-generated files
 __pycache__/
 *.py[oc]
