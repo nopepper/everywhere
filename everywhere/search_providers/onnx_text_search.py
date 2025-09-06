@@ -3,13 +3,14 @@
 from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
-from typing import Self, TypeVar, cast
+from typing import cast
 
 import numpy as np
 from onnxruntime import InferenceSession
-from pydantic import Field, model_validator
+from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
+from ..watchers.watcher import EventType, WatchEvent
 from .search_provider import SearchProvider, SearchQuery, SearchResult
 
 
@@ -22,26 +23,22 @@ def _mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> n
 
 
 def _similarity(obj1: np.ndarray, obj2: np.ndarray) -> float:
-    return np.dot(obj1, obj2) / (np.linalg.norm(obj1) * np.linalg.norm(obj2))
+    return float(np.dot(obj1, obj2) / (np.linalg.norm(obj1) * np.linalg.norm(obj2)))
 
 
-V = TypeVar("V")
-
-
-class ONNXTextSearchProvider(SearchProvider[str, V]):
+class ONNXTextSearchProvider(SearchProvider[str, Path]):
     """ONNX Text Embedder."""
 
     onnx_model_path: Path = Field(description="Path to the ONNX model.")
     tokenizer_path: Path = Field(description="Path to the tokenizer.")
+    chunk_size: int = Field(default=2048, description="Chunk size for the text.")
 
-    # TODO this should be a real DB
-    rows: list[tuple[str, np.ndarray, V]] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_embedder(self) -> Self:
-        """Validate the embedder."""
-        assert isinstance(self.embed(["test"]), np.ndarray)
-        return self
+    def setup(self) -> None:
+        """Setup the provider."""
+        assert self.session is not None
+        assert self.tokenizer is not None
+        self.embed(["test"])
+        self._index: dict[Path, np.ndarray] = {}
 
     @cached_property
     def session(self) -> InferenceSession:
@@ -64,20 +61,28 @@ class ONNXTextSearchProvider(SearchProvider[str, V]):
                 "token_type_ids": batch["token_type_ids"],
             },
         )[0]
-        return _mean_pooling(cast("np.ndarray", embs), batch.attention_mask)
+        embs = cast("np.ndarray", embs)
+        if len(embs.shape) == 1:
+            embs = embs.reshape(1, -1)
+        return _mean_pooling(embs, batch.attention_mask)
 
-    def update(self, items: Iterable[tuple[str, V]]) -> None:
-        """Update the provider."""
-        for text, value in items:
-            if any(text == row[0] for row in self.rows):
-                continue
-            self.rows.append((text, self.embed([text])[0], value))
+    def on_change(self, event: WatchEvent[Path]) -> None:
+        """Handle a change event."""
+        if event.event_type == EventType.REMOVED:
+            self._index.pop(event.value, None)
+        else:
+            path = event.value
+            if path.suffix not in [".txt", ".md"]:
+                return
+            text = path.read_text()
+            text_chunks = [text[i : i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
+            self._index[path] = self.embed(text_chunks)
 
-    def search(self, query: SearchQuery[str]) -> Iterable[SearchResult[V]]:
+    def search(self, query: SearchQuery[str]) -> Iterable[SearchResult[Path]]:
         """Search for a query."""
         results = []
         query_embedding = self.embed([query.text])[0]
-        for _, embedding, value in self.rows:
-            similarity = _similarity(query_embedding, embedding)
-            results.append(SearchResult(data=value, confidence=similarity))
+        for path, embeddings in self._index.items():
+            similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
+            results.append(SearchResult(data=path, confidence=similarity))
         return results
