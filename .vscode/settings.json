@@ -14,5 +14,6 @@
     "cursorpyright.analysis.exclude": [
         ".venv",
         "models",
+        "data_test",
     ]
 }

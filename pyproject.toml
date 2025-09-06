@@ -17,6 +17,9 @@ dependencies = [
     "polars>=1.33.0",
 ]
 
+[project.scripts]
+everywhere = "everywhere.app.app:main"
+
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
 
