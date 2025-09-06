@@ -16,7 +16,7 @@ class FSSearchProvider(SearchProvider):
 
     search_providers: list[SearchProvider] = Field(description="Search providers to aggregate.")
     watcher: FSWatcher = Field(description="Watcher for the database.")
-    confidence_threshold: float = Field(default=0.2, description="Confidence threshold for the search results.")
+    confidence_threshold: float = Field(default=0.0, description="Confidence threshold for the search results.")
 
     @property
     def supported_types(self) -> list[str]:

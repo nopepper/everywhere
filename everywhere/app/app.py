@@ -150,6 +150,9 @@ class EverywhereApp(App):
             search_query = SearchQuery(text=self.search_term)
             results = await asyncio.get_event_loop().run_in_executor(None, list, self.fs_search.search(search_query))
 
+            # TODO: don't hardcode this
+            results = results[:1000]
+
             # Update the table with results
             await self._update_results_table(results)
 
