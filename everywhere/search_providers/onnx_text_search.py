@@ -26,6 +26,12 @@ def _similarity(obj1: np.ndarray, obj2: np.ndarray) -> float:
     return (float(np.dot(obj1, obj2) / (np.linalg.norm(obj1) * np.linalg.norm(obj2))) + 1) / 2
 
 
+def _confidence(cos: float, tau: float = 0.3, cap: float = 0.95) -> float:
+    if cos <= tau:
+        return 0.0
+    return max(0.0, min(1.0, (cos - tau) / (cap - tau))) ** 2
+
+
 class ONNXTextSearchProvider(SearchProvider):
     """ONNX Text Embedder."""
 
@@ -72,7 +78,7 @@ class ONNXTextSearchProvider(SearchProvider):
             self._index.pop(event.value, None)
         else:
             path = event.value
-            if path.suffix not in [".txt", ".md"]:
+            if path.suffix not in [".txt", ".md", ".py", ".toml", ".json"]:
                 return
             text = path.read_text()
             text_chunks = [text[i : i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
@@ -84,5 +90,5 @@ class ONNXTextSearchProvider(SearchProvider):
         query_embedding = self.embed([query.text])[0]
         for path, embeddings in self._index.items():
             similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
-            results.append(SearchResult(value=path, confidence=similarity))
+            results.append(SearchResult(value=path, confidence=_confidence(similarity)))
         return results

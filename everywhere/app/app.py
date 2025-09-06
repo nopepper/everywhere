@@ -4,10 +4,12 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Input
 
+from ..common.pydantic import SearchResult
 from ..search_providers.fs_search import FSSearchProvider
 from ..search_providers.onnx_text_search import ONNXTextSearchProvider
 from ..search_providers.search_provider import SearchQuery
@@ -40,22 +42,20 @@ def format_date(timestamp_ns: int) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def confidence_to_color(confidence: float) -> str:
-    """Convert confidence value to a smoothly interpolated gray→green colored square.
-
-    Uses Rich hex color markup to render a foreground-colored block.
-    """
-    # Clamp confidence between 0 and 1
+def confidence_to_color(confidence: float) -> Text:
+    """Convert confidence (0-1) into a gray→green gradient cell."""
     confidence = max(0.0, min(1.0, confidence))
 
-    # Start at medium gray (#808080) and interpolate to green (#00FF00)
-    start_r, start_g, start_b = 128, 128, 128
+    # Start at light gray (#d0d0d0) → End at bright green (#00ff00)
+    start_r, start_g, start_b = 208, 208, 208
     end_r, end_g, end_b = 0, 255, 0
+
     r = round(start_r + (end_r - start_r) * confidence)
     g = round(start_g + (end_g - start_g) * confidence)
     b = round(start_b + (end_b - start_b) * confidence)
+
     hex_color = f"#{r:02x}{g:02x}{b:02x}"
-    return f"[{hex_color}]█[/]"
+    return Text("  ", style=f"on {hex_color}")
 
 
 class EverywhereApp(App):
@@ -112,7 +112,8 @@ class EverywhereApp(App):
         """Set up the app when mounted."""
         # Set up the results table
         table = self.query_one("#results_table", DataTable)
-        table.add_columns("", "Name", "Path", "Size", "Date Modified")
+        table.add_columns("Name", "Path", "Size", "Date Modified")
+        table.cursor_type = "cell"
 
         # Initialize search system in background
         self._setup_task = asyncio.create_task(self._setup_search())
@@ -155,14 +156,14 @@ class EverywhereApp(App):
         except Exception as e:
             self.notify(f"Search error: {e}", severity="error")
 
-    async def _update_results_table(self, results: list) -> None:
+    async def _update_results_table(self, results: list[SearchResult]) -> None:
         """Update the results table with search results."""
         table = self.query_one("#results_table", DataTable)
         table.clear()
 
         for result in results:
             path = result.value
-            confidence_square = confidence_to_color(result.confidence)
+            confidence_label = confidence_to_color(result.confidence)
             try:
                 stat = path.stat()
                 name = path.name
@@ -170,10 +171,10 @@ class EverywhereApp(App):
                 size = format_size(stat.st_size)
                 date_modified = format_date(stat.st_mtime_ns)
 
-                table.add_row(confidence_square, name, path_str, size, date_modified)
+                table.add_row(name, path_str, size, date_modified, label=confidence_label)
             except (OSError, FileNotFoundError):
                 # Handle case where file might have been deleted
-                table.add_row(confidence_square, path.name, str(path), "N/A", "N/A")
+                table.add_row(path.name, str(path), "N/A", "N/A", label=confidence_label)
 
 
 def main():
