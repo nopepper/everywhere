@@ -1,5 +1,6 @@
 """ONNX-based text search provider."""
 
+import logging
 from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
@@ -87,7 +88,23 @@ class ONNXTextSearchProvider(SearchProvider):
             path = event.value
             if path.suffix.strip(".") not in self.supported_types:
                 return
-            text = path.read_text()
+
+            # Try to read with UTF-8 first, then fallback to other encodings
+            text = None
+            encodings = ["utf-8", "utf-16", "latin-1", "cp1252"]
+
+            for encoding in encodings:
+                try:
+                    text = path.read_text(encoding=encoding)
+                    break
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+
+            if text is None:
+                # If all encodings fail, skip this file
+                logging.warning(f"Could not decode file {path} with any supported encoding. Skipping file.")
+                return
+
             text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), self.max_chunk_size)]
             text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
             if len(text_chunks) == 0:
