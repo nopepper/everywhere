@@ -161,6 +161,12 @@ class EverywhereApp(App):
         table = self.query_one("#results_table", DataTable)
         table.clear()
 
+        if not results:
+            # Add a ghost result with 0 confidence when no results found
+            confidence_label = confidence_to_color(0.0)
+            table.add_row("", "", "", "", label=confidence_label)
+            return
+
         for result in results:
             path = result.value
             confidence_label = confidence_to_color(result.confidence)
