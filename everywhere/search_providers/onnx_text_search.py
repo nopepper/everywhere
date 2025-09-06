@@ -37,7 +37,14 @@ class ONNXTextSearchProvider(SearchProvider):
 
     onnx_model_path: Path = Field(description="Path to the ONNX model.")
     tokenizer_path: Path = Field(description="Path to the tokenizer.")
-    chunk_size: int = Field(default=2048, description="Chunk size for the text.")
+
+    min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")
+    max_chunk_size: int = Field(default=2048, description="Maximum chunk size for the text.")
+
+    @property
+    def supported_types(self) -> list[str]:
+        """Supported document types."""
+        return ["txt", "md"]
 
     def setup(self) -> None:
         """Setup the provider."""
@@ -78,11 +85,14 @@ class ONNXTextSearchProvider(SearchProvider):
             self._index.pop(event.value, None)
         else:
             path = event.value
-            if path.suffix not in [".txt", ".md", ".py", ".toml", ".json"]:
+            if path.suffix.strip(".") not in self.supported_types:
                 return
             text = path.read_text()
-            text_chunks = [text[i : i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
-            self._index[path] = self.embed(text_chunks)
+            text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), self.max_chunk_size)]
+            text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
+            if len(text_chunks) == 0:
+                return
+            self._index[path] = np.concatenate([self.embed([chunk]) for chunk in text_chunks], axis=0)
 
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:
         """Search for a query."""

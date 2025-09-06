@@ -24,7 +24,7 @@ class FSWatcher(FrozenBaseModel):
         assert self.fs_path.is_dir()
         return self
 
-    def update(self) -> Iterable[WatchEvent]:
+    def update(self, *, supported_types: list[str] | None = None) -> Iterable[WatchEvent]:
         """Update the database and return all invalidated paths."""
         if self.db_path is None or not self.db_path.exists():
             old_df = pl.DataFrame(
@@ -38,6 +38,8 @@ class FSWatcher(FrozenBaseModel):
             old_df = pl.read_parquet(self.db_path)
 
         scanned_files = (p for p in self.fs_path.rglob("*") if p.is_file())
+        if supported_types is not None:
+            scanned_files = (p for p in scanned_files if p.suffix.strip(".") in supported_types)
         new_rows = [
             ({"path": str(path), "size": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns})
             for path in scanned_files

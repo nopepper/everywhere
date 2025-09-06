@@ -9,6 +9,11 @@ from ..common.pydantic import FrozenBaseModel, SearchQuery, SearchResult, WatchE
 class SearchProvider(FrozenBaseModel, ABC):
     """Search provider."""
 
+    @property
+    @abstractmethod
+    def supported_types(self) -> list[str]:
+        """Supported document types."""
+
     @abstractmethod
     def on_change(self, event: WatchEvent) -> None:
         """Handle a change event."""
