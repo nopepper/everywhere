@@ -1,0 +1,121 @@
+Multilingual Test Document
+==========================
+
+English: Hello, World! How are you today?
+Spanish: ¡Hola, Mundo! ¿Cómo estás hoy?
+French: Bonjour, le Monde ! Comment allez-vous aujourd'hui ?
+German: Hallo, Welt! Wie geht es dir heute?
+Italian: Ciao, Mondo! Come stai oggi?
+Portuguese: Olá, Mundo! Como você está hoje?
+Dutch: Hallo, Wereld! Hoe gaat het vandaag met je?
+Russian: Привет, мир! Как дела сегодня?
+Chinese (Simplified): 你好，世界！你今天好吗？
+Chinese (Traditional): 你好，世界！你今天好嗎？
+Japanese: こんにちは、世界！今日はどうですか？
+Korean: 안녕하세요, 세계! 오늘 어떻게 지내세요?
+Arabic: مرحبا بالعالم! كيف حالك اليوم؟
+Hebrew: שלום, עולם! איך אתה היום?
+Hindi: नमस्ते, संसार! आज आप कैसे हैं?
+Bengali: হ্যালো, বিশ্ব! আজ আপনি কেমন আছেন?
+Thai: สวัสดีโลก! วันนี้คุณเป็นอย่างไร?
+Vietnamese: Xin chào, Thế giới! Hôm nay bạn thế nào?
+Turkish: Merhaba, Dünya! Bugün nasılsın?
+Greek: Γεια σου, κόσμε! Πώς είσαι σήμερα;
+Swedish: Hej, världen! Hur mår du idag?
+Norwegian: Hei, verden! Hvordan har du det i dag?
+Danish: Hej, verden! Hvordan har du det i dag?
+Finnish: Hei, maailma! Miten voit tänään?
+Polish: Cześć, świecie! Jak się masz dzisiaj?
+Czech: Ahoj, světe! Jak se máš dnes?
+Hungarian: Helló, Világ! Hogy vagy ma?
+Romanian: Salut, lume! Cum te simți astăzi?
+Bulgarian: Здравей, свят! Как си днес?
+Croatian: Bok, svijete! Kako si danas?
+Estonian: Tere, maailm! Kuidas täna läheb?
+Latvian: Sveika, pasaule! Kā tev šodien klājas?
+Lithuanian: Labas, pasauli! Kaip šiandien sekasi?
+Slovenian: Zdravo, svet! Kako si danes?
+Slovak: Ahoj, svet! Ako sa máš dnes?
+Ukrainian: Привіт, світе! Як справи сьогодні?
+Mongolian: Сайн байна уу, дэлхий! Өнөөдөр ямар байна?
+Georgian: გამარჯობა, მსოფლიო! როგორ ხარ დღეს?
+Armenian: Բարև, աշխարհ: Ինչպե՞ս ես այսօր:
+Amharic: ሰላም ፣ ዓለም! ዛሬ እንዴት ነህ?
+Swahili: Hujambo, Dunia! Habari za leo?
+Yoruba: Bawo, Agbaye! Bawo ni o se wa loni?
+Zulu: Sawubona, Mhlaba! Unjani namuhla?
+Afrikaans: Hallo, Wêreld! Hoe gaan dit vandag?
+
+Programming Languages Hello World:
+-----------------------------------
+
+Python: print("Hello, World!")
+JavaScript: console.log("Hello, World!");
+Java: System.out.println("Hello, World!");
+C++: std::cout << "Hello, World!" << std::endl;
+C: printf("Hello, World!\n");
+Go: fmt.Println("Hello, World!")
+Rust: println!("Hello, World!");
+Swift: print("Hello, World!")
+Kotlin: println("Hello, World!")
+Ruby: puts "Hello, World!"
+PHP: echo "Hello, World!";
+Perl: print "Hello, World!\n";
+Scala: println("Hello, World!")
+Haskell: main = putStrLn "Hello, World!"
+Clojure: (println "Hello, World!")
+Erlang: io:format("Hello, World!~n").
+Elixir: IO.puts("Hello, World!")
+
+Mixed Script Examples:
+---------------------
+
+English + Arabic: Hello مرحبا World عالم
+English + Chinese: Hello 你好 World 世界
+English + Japanese: Hello こんにちは World 世界
+English + Korean: Hello 안녕하세요 World 세계
+English + Russian: Hello Привет World Мир
+English + Hindi: Hello नमस्ते World संसार
+
+Number Systems:
+--------------
+Arabic: ١٢٣٤٥٦٧٨٩٠
+Persian: ۱۲۳۴۵۶۷۸۹۰
+Devanagari: १२३४५६७८९०
+Bengali: ১২৩৪৫৬৭৮৯০
+Chinese: 一二三四五六七八九零
+Roman: Ⅰ Ⅱ Ⅲ Ⅳ Ⅴ Ⅵ Ⅶ Ⅷ Ⅸ Ⅹ
+
+Calendars and Dates:
+------------------
+Gregorian: December 15, 2023
+Islamic: ربيع الأول ٢, ١٤٤٥
+Hebrew: כ״ג בכסלו תשפ״ד
+Chinese: 癸卯年 十一月 初三
+Japanese: 令和5年12月15日
+
+Poetry in Different Languages:
+-----------------------------
+
+English Haiku:
+Cherry blossoms fall
+Gentle spring rain on my face
+Nature's sweet embrace
+
+Japanese Haiku:
+桜散り
+やわらかき雨
+頬に落つ
+
+Spanish:
+Rosas son rojas,
+violetas son azules,
+el código es vida,
+y los bugs son crueles.
+
+French:
+Sous les ponts de Paris,
+coule la Seine tranquille,
+où les rêveurs épris
+marchent d'un pas fragile.
+

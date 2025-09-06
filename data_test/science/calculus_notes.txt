@@ -1,0 +1,43 @@
+Advanced Calculus and Real Analysis
+
+Fundamental Theorem of Calculus:
+If f is continuous on [a,b] and F is an antiderivative of f, then:
+∫ₐᵇ f(x)dx = F(b) - F(a)
+
+L'Hôpital's Rule:
+If lim[x→c] f(x) = lim[x→c] g(x) = 0 or ±∞, then:
+lim[x→c] f(x)/g(x) = lim[x→c] f'(x)/g'(x)
+
+Taylor Series:
+f(x) = Σ[n=0 to ∞] (f⁽ⁿ⁾(a)/n!) (x-a)ⁿ
+
+Common series:
+- eˣ = Σ[n=0 to ∞] xⁿ/n! = 1 + x + x²/2! + x³/3! + ...
+- sin(x) = Σ[n=0 to ∞] (-1)ⁿ x^(2n+1)/(2n+1)! = x - x³/3! + x⁵/5! - ...
+- cos(x) = Σ[n=0 to ∞] (-1)ⁿ x^(2n)/(2n)! = 1 - x²/2! + x⁴/4! - ...
+- ln(1+x) = Σ[n=1 to ∞] (-1)^(n-1) xⁿ/n = x - x²/2 + x³/3 - ...
+
+Multivariable calculus:
+Gradient: ∇f = (∂f/∂x, ∂f/∂y, ∂f/∂z)
+Divergence: ∇·F = ∂Fₓ/∂x + ∂Fᵧ/∂y + ∂Fᵧ/∂z
+Curl: ∇×F = (∂Fᵧ/∂y - ∂Fᵧ/∂z, ∂Fᵧ/∂z - ∂Fₓ/∂x, ∂Fₓ/∂y - ∂Fᵧ/∂x)
+
+Green's Theorem:
+∮_C (P dx + Q dy) = ∬_D (∂Q/∂x - ∂P/∂y) dA
+
+Stokes' Theorem:
+∮_C F·dr = ∬_S (∇×F)·n dS
+
+Gauss's Divergence Theorem:
+∬_S F·n dS = ∭_V ∇·F dV
+
+Complex Analysis:
+Cauchy-Riemann equations:
+∂u/∂x = ∂v/∂y and ∂u/∂y = -∂v/∂x
+
+Residue Theorem:
+∮_C f(z)dz = 2πi Σ Res(f, zₖ)
+
+Euler's Formula: e^(iθ) = cos(θ) + i sin(θ)
+Therefore: e^(iπ) + 1 = 0 (Euler's Identity)
+

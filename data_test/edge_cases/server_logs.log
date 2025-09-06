@@ -1,0 +1,43 @@
+2023-12-15 09:23:15.123 [INFO] Server started on port 8080
+2023-12-15 09:23:15.456 [INFO] Database connection established: postgresql://localhost:5432/app_db
+2023-12-15 09:23:16.789 [DEBUG] Loading configuration from /etc/app/config.yml
+2023-12-15 09:23:17.012 [INFO] Cache initialized: Redis connection to localhost:6379
+2023-12-15 09:23:17.345 [INFO] Worker processes: 4 started
+2023-12-15 09:25:33.678 [INFO] GET /api/users/1234 - 200 - 45ms - User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+2023-12-15 09:25:34.123 [INFO] POST /api/auth/login - 200 - 123ms - IP: 192.168.1.105
+2023-12-15 09:25:34.456 [DEBUG] JWT token generated for user: alice@example.com
+2023-12-15 09:25:35.789 [ERROR] Database query failed: connection timeout after 30s
+2023-12-15 09:25:35.790 [ERROR] Stack trace:
+    at DatabaseConnection.query (/app/src/database.js:45:12)
+    at UserService.findById (/app/src/services/user.js:23:18)
+    at UserController.getUser (/app/src/controllers/user.js:12:25)
+    at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)
+2023-12-15 09:25:36.012 [WARN] High memory usage detected: 87% - PID: 12345
+2023-12-15 09:25:37.345 [INFO] GET /api/products?category=electronics&limit=20 - 200 - 67ms
+2023-12-15 09:25:38.678 [INFO] Cache hit for key: product_list_electronics_20
+2023-12-15 09:25:39.123 [ERROR] Authentication failed for IP: 192.168.1.200 - Reason: Invalid password
+2023-12-15 09:25:39.456 [WARN] Rate limit exceeded for IP: 192.168.1.200 - Requests: 100/hour
+2023-12-15 09:25:40.789 [INFO] PUT /api/users/1234/profile - 200 - 89ms
+2023-12-15 09:25:41.012 [DEBUG] User profile updated: {email: "alice@example.com", name: "Alice Johnson", last_login: "2023-12-15T09:25:34Z"}
+2023-12-15 09:25:42.345 [ERROR] Payment processing failed: Gateway timeout - Order ID: ORD-2023-001234
+2023-12-15 09:25:42.346 [ERROR] Payment gateway response: {"status": "timeout", "code": "GW_TIMEOUT", "message": "Request timeout after 60 seconds"}
+2023-12-15 09:25:43.678 [INFO] Retry payment processing initiated for Order ID: ORD-2023-001234
+2023-12-15 09:25:44.123 [INFO] DELETE /api/cart/items/567 - 204 - 12ms
+2023-12-15 09:25:45.456 [DEBUG] Cart item removed: product_id=567, user_id=1234, quantity=2
+2023-12-15 09:25:46.789 [WARN] Disk space low: 92% used on /var/log partition
+2023-12-15 09:25:47.012 [INFO] Background job started: daily_report_generation - Job ID: job_20231215_092547
+2023-12-15 09:25:48.345 [INFO] Email notification sent to admin@company.com - Subject: "Daily System Report"
+2023-12-15 09:25:49.678 [ERROR] External API call failed: https://api.weather.com/v1/current - Status: 503 Service Unavailable
+2023-12-15 09:25:50.123 [INFO] Fallback weather data loaded from cache - Last updated: 2023-12-15T08:30:00Z
+2023-12-15 09:25:51.456 [DEBUG] Websocket connection established: client_id=ws_client_789, session_id=sess_abc123
+2023-12-15 09:25:52.789 [INFO] Real-time notification sent to client: ws_client_789 - Type: order_update
+2023-12-15 09:25:53.012 [ERROR] Security alert: Multiple failed login attempts detected - IP: 10.0.0.15, Username: admin
+2023-12-15 09:25:53.013 [WARN] IP blocked temporarily: 10.0.0.15 - Duration: 15 minutes
+2023-12-15 09:25:54.345 [INFO] Scheduled maintenance window starting in 30 minutes - Duration: 2 hours
+2023-12-15 09:25:55.678 [DEBUG] Health check passed: CPU: 34%, Memory: 67%, Disk: 23%, Network: OK
+2023-12-15 09:25:56.123 [INFO] File upload completed: user_id=1234, file_name="document.pdf", size=2.3MB, upload_time=1.2s
+2023-12-15 09:25:57.456 [ERROR] File processing failed: Virus detected in uploaded file - Quarantined: document.pdf
+2023-12-15 09:25:58.789 [WARN] API rate limit warning: Client API key "key_abc123" approaching limit (850/1000 requests/hour)
+2023-12-15 09:25:59.012 [INFO] Search query executed: "quantum physics tutorials", results: 1247, response_time: 23ms
+2023-12-15 09:26:00.345 [DEBUG] Search index updated: 12 new documents indexed, total documents: 1,045,672
+

@@ -1,0 +1,39 @@
+Quantum Mechanics: Wave-Particle Duality
+
+The fundamental equation of quantum mechanics is the Schrödinger equation:
+
+iℏ ∂/∂t |ψ(t)⟩ = Ĥ |ψ(t)⟩
+
+Where:
+- ℏ is the reduced Planck constant (h/2π ≈ 1.054571817 × 10⁻³⁴ J⋅s)
+- |ψ(t)⟩ represents the quantum state vector
+- Ĥ is the Hamiltonian operator
+- i is the imaginary unit (√-1)
+
+The probability density of finding a particle at position x is given by:
+ρ(x,t) = |ψ(x,t)|²
+
+Heisenberg's Uncertainty Principle states that:
+Δx Δp ≥ ℏ/2
+
+Where Δx is the uncertainty in position and Δp is the uncertainty in momentum.
+
+The wave function for a particle in a 1D infinite square well of width L is:
+ψₙ(x) = √(2/L) sin(nπx/L)
+
+With energy eigenvalues:
+Eₙ = n²π²ℏ²/(2mL²)
+
+For n = 1, 2, 3, ... (quantum numbers)
+
+The quantum harmonic oscillator has energy levels:
+Eₙ = ℏω(n + 1/2)
+
+Where ω is the angular frequency of the classical oscillator.
+
+Bell's Theorem and the CHSH inequality:
+|⟨A₁B₁⟩ + ⟨A₁B₂⟩ + ⟨A₂B₁⟩ - ⟨A₂B₂⟩| ≤ 2 (classical)
+But quantum mechanics allows violations up to 2√2 ≈ 2.828
+
+The EPR paradox demonstrates quantum entanglement where measuring one particle instantaneously affects its entangled partner, regardless of distance - what Einstein called "spooky action at a distance."
+
