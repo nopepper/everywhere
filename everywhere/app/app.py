@@ -15,6 +15,9 @@ from ..search_providers.onnx_text_search import ONNXTextSearchProvider
 from ..search_providers.search_provider import SearchQuery
 from ..watchers.fs_watcher import FSWatcher
 
+DEBOUNCE_LATENCY = 0.05
+RESULT_LIMIT = 1000
+
 
 def format_size(size_bytes: int) -> str:
     """Format file size in bytes to human readable format."""
@@ -96,11 +99,10 @@ class EverywhereApp(App):
             onnx_model_path=Path("models/all-MiniLM-L6-v2/onnx/model_quint8_avx2.onnx"),
             tokenizer_path=Path("models/all-MiniLM-L6-v2"),
         )
-        self.fs_search = FSSearchProvider(
-            search_providers=[self.text_search],
-            watcher=self.watcher,
-        )
+        self.fs_search = FSSearchProvider(search_providers=[self.text_search], watcher=self.watcher)
         self.search_setup_done = False
+        self._debounce_task: asyncio.Task | None = None
+        self._search_gen: int = 0
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -110,63 +112,68 @@ class EverywhereApp(App):
 
     def on_mount(self) -> None:
         """Set up the app when mounted."""
-        # Set up the results table
         table = self.query_one("#results_table", DataTable)
         table.add_columns("Name", "Path", "Size", "Date Modified")
         table.cursor_type = "cell"
-
-        # Initialize search system in background
         self._setup_task = asyncio.create_task(self._setup_search())
 
     async def _setup_search(self) -> None:
-        """Set up the search system asynchronously."""
         try:
-            # This might take some time, so do it in background
             await asyncio.get_event_loop().run_in_executor(None, self.fs_search.setup)
             self.search_setup_done = True
-            # Trigger initial search if there's already a search term
             if self.search_term:
-                await self._perform_search()
+                await self._perform_search(self._search_gen)
         except Exception as e:
             self.notify(f"Failed to initialize search: {e}", severity="error")
 
     def on_input_changed(self, message: Input.Changed) -> None:
         """Handle search input changes."""
-        if message.input.id == "search_input":
-            self.search_term = message.value
-            # Create task for search to avoid blocking UI
-            self._search_task = asyncio.create_task(self._perform_search())
+        if message.input.id != "search_input":
+            return
+        self.search_term = message.value
+        self._search_gen += 1
+        gen = self._search_gen
 
-    async def _perform_search(self) -> None:
-        """Perform search and update results."""
-        if not self.search_setup_done or not self.search_term.strip():
-            # Clear results if no search term
-            table = self.query_one("#results_table", DataTable)
-            table.clear()
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
+
+        self._debounce_task = asyncio.create_task(self._debounced_search(gen))
+
+    async def _debounced_search(self, gen: int) -> None:
+        try:
+            await asyncio.sleep(DEBOUNCE_LATENCY)
+        except asyncio.CancelledError:
+            return
+        await self._perform_search(gen)
+
+    async def _perform_search(self, gen: int) -> None:
+        """Perform search and update results if still the latest generation."""
+        if not self.search_term.strip() or not self.search_setup_done:
+            if gen == self._search_gen:
+                table = self.query_one("#results_table", DataTable)
+                table.clear()
             return
 
         try:
-            # Perform search in background thread to avoid blocking UI
             search_query = SearchQuery(text=self.search_term)
-            results = await asyncio.get_event_loop().run_in_executor(None, list, self.fs_search.search(search_query))
+            results = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: list(self.fs_search.search(search_query))
+            )
+            results = results[:RESULT_LIMIT]
 
-            # TODO: don't hardcode this
-            results = results[:1000]
-
-            # Update the table with results
-            await self._update_results_table(results)
-
+            if gen == self._search_gen:
+                await self._update_results_table(results)
         except Exception as e:
-            self.notify(f"Search error: {e}", severity="error")
+            if gen == self._search_gen:
+                self.notify(f"Search error: {e}", severity="error")
 
     async def _update_results_table(self, results: list[SearchResult]) -> None:
-        """Update the results table with search results."""
         table = self.query_one("#results_table", DataTable)
         table.clear()
 
         if not results:
-            # Add a ghost result with 0 confidence when no results found
             confidence_label = confidence_to_color(0.0)
+            # Note: you have 4 columns; provide 4 cells.
             table.add_row("", "", "", "", label=confidence_label)
             return
 
@@ -175,14 +182,14 @@ class EverywhereApp(App):
             confidence_label = confidence_to_color(result.confidence)
             try:
                 stat = path.stat()
-                name = path.name
-                path_str = str(path)
-                size = format_size(stat.st_size)
-                date_modified = format_date(stat.st_mtime_ns)
-
-                table.add_row(name, path_str, size, date_modified, label=confidence_label)
+                table.add_row(
+                    path.name,
+                    str(path),
+                    format_size(stat.st_size),
+                    format_date(stat.st_mtime_ns),
+                    label=confidence_label,
+                )
             except (OSError, FileNotFoundError):
-                # Handle case where file might have been deleted
                 table.add_row(path.name, str(path), "N/A", "N/A", label=confidence_label)
 
 
