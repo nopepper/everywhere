@@ -218,7 +218,7 @@ class EverywhereApp(App):
             return
 
         CONF, SIZE, DATE = 2, 8, 20  # noqa: N806
-        OVERHEAD = 10  # noqa: N806
+        OVERHEAD = 12  # noqa: N806
 
         fixed = CONF + SIZE + DATE + OVERHEAD
         free = max(0, total - fixed)

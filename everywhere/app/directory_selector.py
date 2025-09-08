@@ -110,7 +110,7 @@ class DirectorySelector(ModalScreen[set[Path]]):
         tree.guide_depth = 2
         tree.auto_expand = False
         for root in self.roots:
-            node = tree.root.add(self._label_for(root), data=NodeData(root), allow_expand=True)
+            node = tree.root.add(self._label_for(root), data=NodeData(root), allow_expand=self._has_children(root))
             self.path_index[root] = node
         for path in sorted(self.selected):
             self._reveal_path(path)
@@ -129,6 +129,19 @@ class DirectorySelector(ModalScreen[set[Path]]):
             except OSError:
                 pass
         return roots or [Path("/")]
+
+    def _has_children(self, path: Path) -> bool:
+        """Check if a directory has any subdirectories."""
+        try:
+            with os.scandir(path) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False) and (
+                        self.show_hidden or not Path(entry.name).name.startswith(".")
+                    ):
+                        return True
+            return False
+        except Exception:
+            return False
 
     def _load_children(self, node: TreeNode[NodeData]) -> None:
         """Populate immediate subdirectories lazily."""
@@ -150,20 +163,22 @@ class DirectorySelector(ModalScreen[set[Path]]):
 
         subdirs.sort(key=lambda p: p.name.lower())
         for d in subdirs:
-            child = node.add(self._label_for(d), data=NodeData(d), allow_expand=True)
+            child = node.add(self._label_for(d), data=NodeData(d), allow_expand=self._has_children(d))
             self.path_index[d] = child
 
     def _label_for(self, path: Path) -> str:
         state = self._state_for(path)
         mark = CHECKED if state == "checked" else PARTIAL if state == "partial" else UNCHECKED
 
-        # root of a volume (C:\) or POSIX root (/)
+        # root of a volume (C:) or POSIX root (/)
         is_root = path == Path(path.anchor)
 
         # Use ternary operator as suggested by linter
         name = (path.drive or path.anchor).rstrip("\\/") if is_root else path.name or str(path)
 
-        return f"{mark}{name}"
+        # Add a placeholder for alignment if there are no children
+        prefix = "  " if not self._has_children(path) else ""
+        return f"{prefix}{mark}{name}"
 
     def _state_for(self, path: Path) -> str:
         if path in self.selected:
@@ -211,7 +226,7 @@ class DirectorySelector(ModalScreen[set[Path]]):
             self._load_children(cur)
             nxt = self.path_index.get(base)
             if not nxt:
-                nxt = cur.add(self._label_for(base), data=NodeData(base), allow_expand=True)
+                nxt = cur.add(self._label_for(base), data=NodeData(base), allow_expand=self._has_children(base))
                 self.path_index[base] = nxt
             cur = nxt
             cur.expand()
