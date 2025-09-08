@@ -15,14 +15,10 @@ from transformers import AutoTokenizer, PreTrainedTokenizerFast
 from voyager import Index, Space, StorageDataType
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events import add_callback, correlated, publish, release
+from ..events import add_callback, correlated, publish
 from ..events.search_provder import (
     IndexingFinished,
     IndexingStarted,
-    SetupFinished,
-    SetupStarted,
-    TeardownFinished,
-    TeardownStarted,
 )
 from ..events.watcher import ChangeType, FileChanged
 from .search_provider import SearchProvider
@@ -94,7 +90,6 @@ class ONNXTextSearchProvider(SearchProvider):
     @correlated
     def setup(self) -> None:
         """Setup the provider."""
-        publish(SetupStarted())
         assert self.session is not None
         assert self.tokenizer is not None
         test_emb = self.embed(["test"])
@@ -102,15 +97,11 @@ class ONNXTextSearchProvider(SearchProvider):
         self._index_lock = threading.Lock()
         self._idle = threading.Event()
         self._idle.set()
-        add_callback(str(id(self)), FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
-        add_callback(str(id(self)), FileChanged, self.on_change)
-        publish(SetupFinished())
+        add_callback(FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
+        add_callback(FileChanged, self.on_change)
 
     def teardown(self) -> None:
         """Teardown the provider."""
-        publish(TeardownStarted())
-        release(str(id(self)))
-        publish(TeardownFinished())
 
     @cached_property
     def session(self) -> ort.InferenceSession:

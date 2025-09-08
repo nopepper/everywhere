@@ -1,25 +1,18 @@
 """Directory selector modal for choosing indexed directories."""
 
-from __future__ import annotations
-
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from textual import on
+from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.events import Key
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Tree
 from textual.widgets.tree import TreeNode
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from textual.app import ComposeResult
-    from textual.events import Key
-
 
 if sys.platform.startswith("win"):
     CHECKED = "[green](x) [/] "

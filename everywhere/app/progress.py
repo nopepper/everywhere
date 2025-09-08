@@ -11,8 +11,8 @@ class ProgressTracker:
         """Initialize the progress tracker."""
         self._total_tasks = 0
         self._finished_tasks = 0
-        add_callback(str(id(self)), IndexingStarted, self.on_indexing_started)
-        add_callback(str(id(self)), IndexingFinished, self.on_indexing_finished)
+        add_callback(IndexingStarted, self.on_indexing_started)
+        add_callback(IndexingFinished, self.on_indexing_finished)
 
     def reset(self) -> None:
         """Reset the progress tracker."""
