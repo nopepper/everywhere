@@ -148,6 +148,13 @@ class EverywhereApp(App):
         width: 1fr;
     }
 
+    #warning_text {
+        width: auto;
+        color: yellow;
+        text-style: bold;
+        margin-right: 1;
+    }
+
     #status_text {
         width: 25;
         content-align: right middle;

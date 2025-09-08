@@ -38,3 +38,8 @@ class ProgressTracker:
     def finished_tasks(self) -> int:
         """Open tasks."""
         return self._finished_tasks
+
+    @property
+    def ready(self) -> bool:
+        """Ready."""
+        return self.total_tasks - self.finished_tasks == 0
