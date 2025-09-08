@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,18 +12,23 @@ from textual import on
 from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Tree
+from textual.widgets.tree import TreeNode
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from textual.app import ComposeResult
     from textual.events import Key
-    from textual.widgets.tree import TreeNode
 
 
-CHECKED = "[green]☑\ufe0e[/] "
-UNCHECKED = "[white]☐\ufe0e[/] "
-PARTIAL = "[yellow]☐\ufe0e[/] "
+if sys.platform.startswith("win"):
+    CHECKED = "[green](x) [/] "
+    UNCHECKED = "[white]( ) [/] "
+    PARTIAL = "[yellow](-) [/] "
+else:
+    CHECKED = "[green]☑ [/] "
+    UNCHECKED = "[white]☐ [/] "
+    PARTIAL = "[yellow]☐ [/] "
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,18 @@ class DirectorySelector(ModalScreen[set[Path]]):
         min-width: 30;
         height: auto;
         content-align: center middle;
+    }
+    #tree .tree--cursor,
+    #tree .tree--highlight,
+    #tree .tree--highlight-line,
+    #tree .tree--guides-selected,
+    #tree .tree--guides-hover {
+        background: transparent;
+        text-style: none;
+        outline: none;
+    }
+    #tree:focus {
+        outline: none;
     }
     #btns #ok {
         background: $primary;
@@ -245,6 +263,8 @@ class DirectorySelector(ModalScreen[set[Path]]):
         self._toggle(node.data.path)
         self._refresh_branch(node)
         ev.stop()
+        tree = self.query_one("#tree", Tree)
+        tree.unselect()
 
     def on_key(self, event: Key) -> None:
         """Handle keyboard events for space/escape."""
