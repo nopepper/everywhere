@@ -67,6 +67,8 @@ class ONNXTextSearchProvider(SearchProvider):
         self.embed(["test"])
         self._index: dict[Path, np.ndarray] = {}
         self._index_lock = threading.Lock()
+        self._idle = threading.Event()
+        self._idle.set()
         add_callback(str(id(self)), FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
         add_callback(str(id(self)), FileChanged, self.on_change)
         publish(SetupFinished())
@@ -136,8 +138,12 @@ class ONNXTextSearchProvider(SearchProvider):
                 text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
+                _embs = []
+                for chunk in text_chunks:
+                    self._idle.wait()
+                    _embs.append(self.embed([chunk]))
                 with self._index_lock:
-                    self._index[path] = np.concatenate([self.embed([chunk]) for chunk in text_chunks], axis=0)
+                    self._index[path] = np.concatenate(_embs, axis=0)
                 success = True
         finally:
             publish(IndexingFinished(success=success, path=path))
@@ -145,9 +151,11 @@ class ONNXTextSearchProvider(SearchProvider):
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:
         """Search for a query."""
         results = []
+        self._idle.clear()
         query_embedding = self.embed([query.text])[0]
         with self._index_lock:
             for path, embeddings in self._index.items():
                 similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
                 results.append(SearchResult(value=path, confidence=_confidence(similarity)))
+        self._idle.set()
         return results

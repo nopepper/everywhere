@@ -125,6 +125,7 @@ class EverywhereApp(App):
 
     DataTable {
         height: 1fr;
+        width: 1fr;
         margin: 0 1;
     }
 
@@ -185,7 +186,11 @@ class EverywhereApp(App):
     def on_mount(self) -> None:
         """Set up the app when mounted."""
         table = self.query_one("#results_table", DataTable)
-        table.add_columns("Name", "Path", "Size", "Date Modified")
+        table.add_column("", width=2, key="confidence")
+        table.add_column("Name", width=24, key="file_name")
+        table.add_column("Path", width=100, key="path")
+        table.add_column("Size", width=9, key="size")
+        table.add_column("Date Modified", width=19, key="date_modified")
         table.cursor_type = "cell"
         self._setup_task = asyncio.create_task(self._setup_search())
 
@@ -243,22 +248,17 @@ class EverywhereApp(App):
         table = self.query_one("#results_table", DataTable)
         table.clear()
 
-        if not results:
-            confidence_label = confidence_to_color(0.0)
-            table.add_row("", "", "", "", label=confidence_label)
-            return
-
         for result in results:
             path = result.value
             confidence_label = confidence_to_color(result.confidence)
             try:
                 stat = path.stat()
                 table.add_row(
+                    confidence_label,
                     path.name,
                     str(path),
                     format_size(stat.st_size),
                     format_date(stat.st_mtime_ns),
-                    label=confidence_label,
                 )
             except (OSError, FileNotFoundError):
                 table.add_row(path.name, str(path), "N/A", "N/A", label=confidence_label)
