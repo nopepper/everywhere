@@ -42,7 +42,7 @@ The project was inspired by [Everything](https://www.voidtools.com/support/every
     - [ ] For each search provider, show checkboxes for each document type it supports
 - [ ] Improve quality
   - [x] Normalize embeddings
-  - [ ] Add small overlap when chunking
+  - [x] Add small overlap when chunking
   - [x] Chunks at 256 tokens, unless the document is very small
   - [ ] Nested RAG (successive halving)
 - [ ] Improve reliability

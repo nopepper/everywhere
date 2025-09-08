@@ -38,37 +38,49 @@ class IndexHelper:
     def __init__(self, dims: int):
         """Initialize the index helper."""
         self._index = Index(Space.InnerProduct, num_dimensions=dims, storage_data_type=StorageDataType.E4M3)
-        self._id_to_path = {}
-        self._path_to_id = {}
+        self._tracked_paths = []
 
     def add(self, path: Path, embedding: np.ndarray) -> None:
         """Add an embedding to the index."""
         if len(embedding.shape) == 1:
             new_id = self._index.add_item(embedding)
-            self._id_to_path[new_id] = path
-            self._path_to_id[path] = new_id
+            self._tracked_paths.append(
+                {
+                    "path": path,
+                    "id": new_id,
+                }
+            )
         else:
             assert len(embedding.shape) == 2
             new_ids = self._index.add_items(embedding)
             for new_id in new_ids:
-                self._id_to_path[new_id] = path
-                self._path_to_id[path] = new_id
+                self._tracked_paths.append(
+                    {
+                        "path": path,
+                        "id": new_id,
+                    }
+                )
         return new_id
 
     def remove(self, path: Path) -> bool:
         """Remove an embedding from the index."""
-        if path not in self._path_to_id:
-            return False
-        path_id = self._path_to_id.pop(path)
-        del self._id_to_path[path_id]
-        self._index.mark_deleted(path_id)
-        return True
+        for row in self._tracked_paths:
+            if row["path"] == path:
+                self._index.mark_deleted(row["id"])
+                self._tracked_paths.remove(row)
+                return True
+        return False
 
     def query(self, embedding: np.ndarray, k: int) -> list[tuple[Path, float]]:
         """Query the index."""
         ids, distances = self._index.query(embedding, k=min(k, self._index.num_elements))
         assert len(ids.shape) == len(distances.shape) == 1
-        return [(self._id_to_path[path_id], distance) for path_id, distance in zip(ids, distances, strict=True)]
+        results = []
+        for path_id, distance in zip(ids, distances, strict=True):
+            path = next((row["path"] for row in self._tracked_paths if row["id"] == path_id), None)
+            if path is not None:
+                results.append((path, distance))
+        return results
 
 
 class ONNXTextSearchProvider(SearchProvider):
@@ -77,9 +89,10 @@ class ONNXTextSearchProvider(SearchProvider):
     onnx_model_path: Path = Field(description="Path to the ONNX model.")
     tokenizer_path: Path = Field(description="Path to the tokenizer.")
 
-    k: int = Field(default=100, description="Number of results to return.")
+    k: int = Field(default=1000, description="Number of results to return.")
     min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")
-    max_chunk_size: int = Field(default=4096, description="Maximum chunk size for the text.")
+    max_chunk_size: int = Field(default=2048, description="Maximum chunk size for the text.")
+    overlap: int = Field(default=128, description="Overlap for the text chunks.")
     max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
 
     @property
@@ -177,7 +190,9 @@ class ONNXTextSearchProvider(SearchProvider):
                     logging.warning(f"Could not decode file {path} with any supported encoding. Skipping file.")
                     return
 
-                text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), self.max_chunk_size)]
+                # Create overlapping chunks with 20% overlap
+                step_size = self.max_chunk_size - self.overlap
+                text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), step_size)]
                 text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
@@ -188,7 +203,7 @@ class ONNXTextSearchProvider(SearchProvider):
                     self._index.add(path, emb)
                 success = True
         finally:
-            publish(IndexingFinished(success=success, path=path))
+            publish(IndexingFinished(success=success, path=event.path))
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""

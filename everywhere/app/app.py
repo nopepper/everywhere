@@ -308,7 +308,7 @@ class EverywhereApp(App):
                     format_date(stat.st_mtime_ns),
                 )
             except (OSError, FileNotFoundError):
-                table.add_row(path.name, str(path), "N/A", "N/A", label=confidence_label)
+                table.add_row(confidence_label, path.name, str(path), "N/A", "N/A")
 
     @work
     async def action_select_directories(self) -> None:
