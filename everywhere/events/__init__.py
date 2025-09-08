@@ -1,8 +1,8 @@
 """Simple event bus for tracking app activity."""
 
+import contextlib
 import contextvars
 import functools
-import queue
 import threading
 from collections import defaultdict
 from collections.abc import Callable
@@ -51,10 +51,7 @@ def _process_events():
         event = _main_queue.get()
         for listener in _listeners:
             if listener.event_type in (None, type(event)):
-                try:
-                    listener.queue.put(event)
-                except queue.ShutDown:
-                    continue
+                listener.queue.put(event)
 
 
 def get_listener(lifecycle_id: str, event_type: type[Event] | None = None) -> SimpleQueue:
@@ -75,9 +72,8 @@ def add_callback(lifecycle_id: str, event_type: type[T], callback: Callable[[T],
 
     def callback_func():
         while True:
-            try:
-                event = listener.get()
-            except queue.ShutDown:
+            event = listener.get()
+            if event is None:
                 break
             callback(event)
 
@@ -87,6 +83,9 @@ def add_callback(lifecycle_id: str, event_type: type[T], callback: Callable[[T],
 def release(lifecycle_id: str):
     """Release listeners for a lifecycle."""
     global _listeners
+    for listener in _listeners:
+        if listener.lifecycle_id == lifecycle_id:
+            listener.queue.put(None)
     _listeners = [listener for listener in _listeners if listener.lifecycle_id != lifecycle_id]
 
 

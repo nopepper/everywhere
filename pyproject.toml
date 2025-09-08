@@ -3,7 +3,7 @@ name = "everywhere"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "onnxruntime>=1.22.1",
     "transformers>=4.56.1",
@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.11.7",
     "textual>=6.1.0",
     "polars>=1.33.0",
+    "voyager>=2.1.0",
 ]
 
 [project.scripts]

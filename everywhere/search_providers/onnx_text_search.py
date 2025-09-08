@@ -2,15 +2,16 @@
 
 import logging
 import threading
-from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
 from typing import cast
 
 import numpy as np
+from more_itertools import unique_everseen
 from onnxruntime import InferenceSession
 from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from voyager import Index, Space, StorageDataType
 
 from ..common.pydantic import SearchQuery, SearchResult
 from ..events import add_callback, correlated, publish, release
@@ -34,14 +35,42 @@ def _mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> n
     )
 
 
-def _similarity(obj1: np.ndarray, obj2: np.ndarray) -> float:
-    return (float(np.dot(obj1, obj2) / (np.linalg.norm(obj1) * np.linalg.norm(obj2))) + 1) / 2
-
-
 def _confidence(cos: float, tau: float = 0.3, cap: float = 0.95) -> float:
     if cos <= tau:
         return 0.0
     return max(0.0, min(1.0, (cos - tau) / (cap - tau))) ** 2
+
+
+class IndexHelper:
+    """Index helper."""
+
+    def __init__(self, dims: int):
+        """Initialize the index helper."""
+        self._index = Index(Space.InnerProduct, num_dimensions=dims, storage_data_type=StorageDataType.E4M3)
+        self._id_to_path = {}
+        self._path_to_id = {}
+
+    def add(self, path: Path, embedding: np.ndarray) -> None:
+        """Add an embedding to the index."""
+        new_id = self._index.add_item(embedding)
+        self._id_to_path[new_id] = path
+        self._path_to_id[path] = new_id
+        return new_id
+
+    def remove(self, path: Path) -> bool:
+        """Remove an embedding from the index."""
+        if path not in self._path_to_id:
+            return False
+        path_id = self._path_to_id.pop(path)
+        del self._id_to_path[path_id]
+        self._index.mark_deleted(path_id)
+        return True
+
+    def query(self, embedding: np.ndarray, k: int) -> list[tuple[Path, float]]:
+        """Query the index."""
+        ids, distances = self._index.query(embedding, k=min(k, self._index.num_elements))
+        assert len(ids.shape) == len(distances.shape) == 1
+        return [(self._id_to_path[path_id], distance) for path_id, distance in zip(ids, distances, strict=True)]
 
 
 class ONNXTextSearchProvider(SearchProvider):
@@ -50,8 +79,10 @@ class ONNXTextSearchProvider(SearchProvider):
     onnx_model_path: Path = Field(description="Path to the ONNX model.")
     tokenizer_path: Path = Field(description="Path to the tokenizer.")
 
+    k: int = Field(default=100, description="Number of results to return.")
     min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")
     max_chunk_size: int = Field(default=2048, description="Maximum chunk size for the text.")
+    max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
 
     @property
     def supported_types(self) -> list[str]:
@@ -64,8 +95,8 @@ class ONNXTextSearchProvider(SearchProvider):
         publish(SetupStarted())
         assert self.session is not None
         assert self.tokenizer is not None
-        self.embed(["test"])
-        self._index: dict[Path, np.ndarray] = {}
+        test_emb = self.embed(["test"])
+        self._index = IndexHelper(test_emb.shape[-1])
         self._index_lock = threading.Lock()
         self._idle = threading.Event()
         self._idle.set()
@@ -112,10 +143,12 @@ class ONNXTextSearchProvider(SearchProvider):
         try:
             if event.event_type == ChangeType.REMOVED:
                 with self._index_lock:
-                    self._index.pop(event.path, None)
+                    self._index.remove(event.path)
             else:
                 path = event.path
                 if path.suffix.strip(".") not in self.supported_types:
+                    return
+                if path.stat().st_size > self.max_filesize_mb * 1024 * 1024:
                     return
 
                 # Try to read with UTF-8 first, then fallback to other encodings
@@ -138,24 +171,25 @@ class ONNXTextSearchProvider(SearchProvider):
                 text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
-                _embs = []
                 for chunk in text_chunks:
                     self._idle.wait()
-                    _embs.append(self.embed([chunk]))
-                with self._index_lock:
-                    self._index[path] = np.concatenate(_embs, axis=0)
+                    emb = self.embed([chunk])[0]
+                    emb = emb / np.linalg.norm(emb)
+                    self._index.add(path, emb)
                 success = True
         finally:
             publish(IndexingFinished(success=success, path=path))
 
-    def search(self, query: SearchQuery) -> Iterable[SearchResult]:
+    def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
         results = []
         self._idle.clear()
         query_embedding = self.embed([query.text])[0]
         with self._index_lock:
-            for path, embeddings in self._index.items():
-                similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
+            for path, distance in self._index.query(query_embedding, self.k):
+                similarity = 1 - distance
                 results.append(SearchResult(value=path, confidence=_confidence(similarity)))
+        results.sort(key=lambda x: x.confidence, reverse=True)
+        results = list(unique_everseen(results, key=lambda x: x.value))
         self._idle.set()
         return results
