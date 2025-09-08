@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 
 from ..common.pydantic import FrozenBaseModel
 from ..events import publish
-from ..events.watcher import ChangeType, FileChangeEvent
+from ..events.watcher import ChangeType, FileChanged
 
 
 class FSWatcher(FrozenBaseModel):
@@ -57,8 +57,8 @@ class FSWatcher(FrozenBaseModel):
             new_df.write_parquet(self.db_path)
 
         for path in df_added["path"].to_list():
-            publish(FileChangeEvent(path=Path(path), event_type=ChangeType.ADDED))
+            publish(FileChanged(path=Path(path), event_type=ChangeType.ADDED))
         for path in df_changed["path"].to_list():
-            publish(FileChangeEvent(path=Path(path), event_type=ChangeType.CHANGED))
+            publish(FileChanged(path=Path(path), event_type=ChangeType.CHANGED))
         for path in df_deleted["path"].to_list():
-            publish(FileChangeEvent(path=Path(path), event_type=ChangeType.REMOVED))
+            publish(FileChanged(path=Path(path), event_type=ChangeType.REMOVED))

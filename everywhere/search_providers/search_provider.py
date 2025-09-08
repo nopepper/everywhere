@@ -1,5 +1,6 @@
 """Basic search provider interface."""
 
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
@@ -23,3 +24,8 @@ class SearchProvider(FrozenBaseModel, ABC):
 
     def teardown(self) -> None:
         """Teardown the provider."""
+
+    @property
+    def provider_id(self) -> str:
+        """Provider ID."""
+        return hashlib.md5((str(type(self)) + "\n" + self.model_dump_json()).encode()).hexdigest()

@@ -12,8 +12,9 @@ from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events import add_callback
-from ..events.watcher import ChangeType, FileChangeEvent
+from ..events import add_callback, correlated, publish
+from ..events.search_provder import IndexingFinished, IndexingStarted, SetupFinished, SetupStarted
+from ..events.watcher import ChangeType, FileChanged
 from .search_provider import SearchProvider
 
 
@@ -49,13 +50,16 @@ class ONNXTextSearchProvider(SearchProvider):
         """Supported document types."""
         return ["txt", "md"]
 
+    @correlated
     def setup(self) -> None:
         """Setup the provider."""
+        publish(SetupStarted())
         assert self.session is not None
         assert self.tokenizer is not None
         self.embed(["test"])
         self._index: dict[Path, np.ndarray] = {}
-        add_callback(FileChangeEvent, self.on_change)
+        add_callback(FileChanged, self.on_change)
+        publish(SetupFinished())
 
     @cached_property
     def session(self) -> InferenceSession:
@@ -83,36 +87,43 @@ class ONNXTextSearchProvider(SearchProvider):
             embs = embs.reshape(1, -1)
         return _mean_pooling(embs, batch["attention_mask"])
 
-    def on_change(self, event: FileChangeEvent) -> None:
+    @correlated
+    def on_change(self, event: FileChanged) -> None:
         """Handle a change event."""
-        if event.event_type == ChangeType.REMOVED:
-            self._index.pop(event.path, None)
-        else:
-            path = event.path
-            if path.suffix.strip(".") not in self.supported_types:
-                return
+        success = False
+        try:
+            publish(IndexingStarted(path=event.path))
+            if event.event_type == ChangeType.REMOVED:
+                self._index.pop(event.path, None)
+            else:
+                path = event.path
+                if path.suffix.strip(".") not in self.supported_types:
+                    return
 
-            # Try to read with UTF-8 first, then fallback to other encodings
-            text = None
-            encodings = ["utf-8", "utf-16", "latin-1", "cp1252"]
+                # Try to read with UTF-8 first, then fallback to other encodings
+                text = None
+                encodings = ["utf-8", "utf-16", "latin-1", "cp1252"]
 
-            for encoding in encodings:
-                try:
-                    text = path.read_text(encoding=encoding)
-                    break
-                except (UnicodeDecodeError, UnicodeError):
-                    continue
+                for encoding in encodings:
+                    try:
+                        text = path.read_text(encoding=encoding)
+                        break
+                    except (UnicodeDecodeError, UnicodeError):
+                        continue
 
-            if text is None:
-                # If all encodings fail, skip this file
-                logging.warning(f"Could not decode file {path} with any supported encoding. Skipping file.")
-                return
+                if text is None:
+                    # If all encodings fail, skip this file
+                    logging.warning(f"Could not decode file {path} with any supported encoding. Skipping file.")
+                    return
 
-            text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), self.max_chunk_size)]
-            text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
-            if len(text_chunks) == 0:
-                return
-            self._index[path] = np.concatenate([self.embed([chunk]) for chunk in text_chunks], axis=0)
+                text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), self.max_chunk_size)]
+                text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
+                if len(text_chunks) == 0:
+                    return
+                self._index[path] = np.concatenate([self.embed([chunk]) for chunk in text_chunks], axis=0)
+                success = True
+        finally:
+            publish(IndexingFinished(success=success, path=path))
 
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:
         """Search for a query."""

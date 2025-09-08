@@ -3,7 +3,7 @@
 from enum import StrEnum
 from pathlib import Path
 
-from ..common.pydantic import FrozenBaseModel
+from . import Event
 
 
 class ChangeType(StrEnum):
@@ -14,7 +14,7 @@ class ChangeType(StrEnum):
     REMOVED = "removed"
 
 
-class FileChangeEvent(FrozenBaseModel):
+class FileChanged(Event):
     """Watch event."""
 
     path: Path
