@@ -35,9 +35,11 @@ class FSSearchProvider(SearchProvider):
         """Setup the provider."""
         for provider in self.search_providers:
             provider.setup()
+        self.watcher.setup()
         self.watcher.update(supported_types=self.supported_types)
 
     def teardown(self) -> None:
         """Teardown the provider."""
+        self.watcher.teardown()
         for provider in self.search_providers:
             provider.teardown()

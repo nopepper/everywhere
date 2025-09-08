@@ -1,14 +1,64 @@
 """Basic filesystem watcher."""
 
+import threading
 from pathlib import Path
 
 import polars as pl
 from more_itertools import flatten
 from pydantic import Field, field_validator
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 
 from ..common.pydantic import FrozenBaseModel
 from ..events import publish
 from ..events.watcher import ChangeType, FileChanged
+
+
+class _FSWatchdogEventHandler(FileSystemEventHandler):
+    def __init__(self, fs_path: Path):
+        """Initialize the filesystem watcher event handler."""
+        self.fs_path = fs_path
+        self.timers: dict[Path, threading.Timer] = {}
+
+    def _decode_path(self, path: str | bytes) -> Path:
+        """Decode the path."""
+        if isinstance(path, bytes):
+            return Path(path.decode("utf-8"))
+        else:
+            return Path(path)
+
+    def on_any_event(self, event: FileSystemEvent):
+        """Handle a modified event."""
+        if event.is_directory or event.event_type not in ["created", "deleted", "modified", "moved"]:
+            return
+        src_path = self._decode_path(event.src_path)
+        if src_path.is_relative_to(self.fs_path):
+            if src_path in self.timers:
+                self.timers[src_path].cancel()
+
+            def _publish():
+                publish(FileChanged(path=src_path, event_type=ChangeType.CHANGED))
+                del self.timers[src_path]
+
+            self.timers[src_path] = threading.Timer(0.5, _publish)  # 0.5s grace period
+            self.timers[src_path].start()
+
+
+class _FSWatchdog:
+    def __init__(self, fs_paths: list[Path]):
+        """Initialize the filesystem watcher."""
+        self.observer = Observer()
+        for fs_path in fs_paths:
+            self.observer.schedule(_FSWatchdogEventHandler(fs_path), fs_path.as_posix(), recursive=True)
+
+    def start(self):
+        """Start the filesystem watcher."""
+        self.observer.start()
+
+    def stop(self):
+        """Stop the filesystem watcher."""
+        self.observer.stop()
+        self.observer.join()
 
 
 class FSWatcher(FrozenBaseModel):
@@ -18,6 +68,16 @@ class FSWatcher(FrozenBaseModel):
     db_path: Path | None = Field(
         default=None, description="Path to the database. If not provided, will do everything in memory."
     )
+
+    def setup(self):
+        """Setup the filesystem watcher."""
+        fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
+        self._fs_watcher = _FSWatchdog(fs_paths)
+        self._fs_watcher.start()
+
+    def teardown(self):
+        """Teardown the filesystem watcher."""
+        self._fs_watcher.stop()
 
     @field_validator("fs_path")
     @classmethod

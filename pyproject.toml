@@ -14,6 +14,7 @@ dependencies = [
     "textual>=6.1.0",
     "polars>=1.33.0",
     "voyager>=2.1.0",
+    "watchdog>=6.0.0",
 ]
 
 [project.scripts]
