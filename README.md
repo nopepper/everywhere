@@ -48,10 +48,19 @@ The project was inspired by [Everything](https://www.voidtools.com/support/every
   - [ ] Add tests
   - [ ] Add logging & events
 - [ ] Documentation & OSS
-  - [ ] License
+  - [x] License
   - [ ] Readme
+    - [ ] Installation
+    - [ ] Usage
+    - [x] Roadmap
+    - [x] License
+  - [ ] Update docs
 - [ ] Future
   - [ ] GPU support
   - [ ] Faster filesystem parsing
   - [ ] Remote search providers (GDrive, Notion)
   - [ ] Image search providers
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
