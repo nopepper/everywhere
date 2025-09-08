@@ -156,8 +156,14 @@ class DirectorySelector(ModalScreen[set[Path]]):
     def _label_for(self, path: Path) -> str:
         state = self._state_for(path)
         mark = CHECKED if state == "checked" else PARTIAL if state == "partial" else UNCHECKED
-        name = path.drive if path.drive else (path.name or str(path))
-        return f"{mark} {name}"
+
+        # root of a volume (C:\) or POSIX root (/)
+        is_root = path == Path(path.anchor)
+
+        # Use ternary operator as suggested by linter
+        name = (path.drive or path.anchor).rstrip("\\/") if is_root else path.name or str(path)
+
+        return f"{mark}{name}"
 
     def _state_for(self, path: Path) -> str:
         if path in self.selected:
