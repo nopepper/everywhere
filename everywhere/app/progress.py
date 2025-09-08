@@ -1,7 +1,5 @@
 """Progress tracker."""
 
-import threading
-
 from ..events import add_callback
 from ..events.search_provder import IndexingFinished, IndexingStarted
 
@@ -13,7 +11,6 @@ class ProgressTracker:
         """Initialize the progress tracker."""
         self._total_tasks = 0
         self._finished_tasks = 0
-        self._lock = threading.Lock()
         add_callback(IndexingStarted, self.on_indexing_started)
         add_callback(IndexingFinished, self.on_indexing_finished)
 
