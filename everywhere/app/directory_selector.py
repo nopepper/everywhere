@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 CHECKED = "[green]☑[/] "
 UNCHECKED = "[white]☐[/] "
-PARTIAL = "[yellow]☑[/] "
+PARTIAL = "[yellow]☐[/] "
 
 
 @dataclass(frozen=True)
