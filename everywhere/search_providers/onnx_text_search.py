@@ -36,12 +36,6 @@ def _mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> n
     )
 
 
-def _confidence(cos: float, tau: float = 0.3, cap: float = 0.95) -> float:
-    if cos <= tau:
-        return 0.0
-    return max(0.0, min(1.0, (cos - tau) / (cap - tau))) ** 2
-
-
 class IndexHelper:
     """Index helper."""
 
