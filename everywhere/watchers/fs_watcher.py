@@ -1,5 +1,6 @@
 """Basic filesystem watcher."""
 
+import os
 import threading
 from pathlib import Path
 
@@ -100,6 +101,8 @@ class FSWatcher(FrozenBaseModel):
         """Update the database and return all invalidated paths."""
         fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
         scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in fs_paths])
+        scanned_files = (p for p in scanned_files if os.access(p, os.R_OK))
+
         if supported_types is not None:
             scanned_files = (p for p in scanned_files if p.suffix.strip(".") in supported_types)
 

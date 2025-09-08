@@ -16,8 +16,8 @@ import threading
 import uuid
 import weakref
 from collections import defaultdict
-from queue import Empty, Queue, SimpleQueue
-from typing import TYPE_CHECKING, Any, TypeVar
+from queue import Empty, SimpleQueue
+from typing import Any, TypeVar
 
 from pydantic import Field
 
