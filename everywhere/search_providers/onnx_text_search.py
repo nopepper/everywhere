@@ -1,14 +1,15 @@
 """ONNX-based text search provider."""
 
 import logging
+import os
 import threading
 from functools import cached_property
 from pathlib import Path
 from typing import cast
 
 import numpy as np
-from more_itertools import chunked, unique_everseen
-from onnxruntime import InferenceSession
+import onnxruntime as ort
+from more_itertools import unique_everseen
 from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 from voyager import Index, Space, StorageDataType
@@ -118,9 +119,15 @@ class ONNXTextSearchProvider(SearchProvider):
         publish(TeardownFinished())
 
     @cached_property
-    def session(self) -> InferenceSession:
+    def session(self) -> ort.InferenceSession:
         """Session."""
-        return InferenceSession(self.onnx_model_path)
+        options = ort.SessionOptions()
+        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        cpu_count = max(1, (os.cpu_count() or 4))
+        options.intra_op_num_threads = max(1, cpu_count - 2)
+        options.inter_op_num_threads = 1
+        options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+        return ort.InferenceSession(self.onnx_model_path, sess_options=options, providers=["CPUExecutionProvider"])
 
     @cached_property
     def tokenizer(self) -> PreTrainedTokenizerFast:
@@ -129,13 +136,24 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def embed(self, text: list[str]) -> np.ndarray:
         """Embed text."""
-        batch = cast("dict[str, np.ndarray]", self.tokenizer(text, padding=True, truncation=True, return_tensors="np"))
+        # Fixed-length padding helps performance in ORT by producing uniform shapes
+        max_len = min(getattr(self.tokenizer, "model_max_length", 512) or 512, 512)
+        batch = cast(
+            "dict[str, np.ndarray]",
+            self.tokenizer(
+                text,
+                padding="max_length",
+                truncation=True,
+                max_length=max_len,
+                return_tensors="np",
+            ),
+        )
         embs = self.session.run(
             None,
             {
                 "input_ids": batch["input_ids"],
                 "attention_mask": batch["attention_mask"],
-                "token_type_ids": batch["token_type_ids"],
+                "token_type_ids": batch.get("token_type_ids", np.zeros_like(batch["input_ids"])),
             },
         )[0]
         embs = cast("np.ndarray", embs)
@@ -178,10 +196,10 @@ class ONNXTextSearchProvider(SearchProvider):
                 text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
-                for batch in chunked(text_chunks, 8):
+                for chunk in text_chunks:
                     self._idle.wait()
-                    emb = self.embed(batch)
-                    emb = emb / np.linalg.norm(emb, axis=-1, keepdims=True)
+                    emb = self.embed([chunk])[0]
+                    emb = emb / np.linalg.norm(emb)
                     self._index.add(path, emb)
                 success = True
         finally:
@@ -192,10 +210,12 @@ class ONNXTextSearchProvider(SearchProvider):
         results = []
         self._idle.clear()
         query_embedding = self.embed([query.text])[0]
+        # Normalize query to align with normalized corpus vectors
+        query_embedding = query_embedding / np.linalg.norm(query_embedding)
         with self._index_lock:
             for path, distance in self._index.query(query_embedding, self.k):
                 similarity = 1 - distance
-                results.append(SearchResult(value=path, confidence=_confidence(similarity)))
+                results.append(SearchResult(value=path, confidence=similarity))
         results.sort(key=lambda x: x.confidence, reverse=True)
         results = list(unique_everseen(results, key=lambda x: x.value))
         self._idle.set()

@@ -3,7 +3,6 @@
 import threading
 from pathlib import Path
 
-import polars as pl
 from more_itertools import flatten
 from pydantic import Field, field_validator
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -37,7 +36,12 @@ class _FSWatchdogEventHandler(FileSystemEventHandler):
                 self.timers[src_path].cancel()
 
             def _publish():
-                publish(FileChanged(path=src_path, event_type=ChangeType.CHANGED))
+                publish(
+                    FileChanged(
+                        path=src_path,
+                        event_type=ChangeType.REMOVED if event.event_type == "deleted" else ChangeType.CHANGED,
+                    )
+                )
                 del self.timers[src_path]
 
             self.timers[src_path] = threading.Timer(0.5, _publish)  # 0.5s grace period
@@ -65,9 +69,6 @@ class FSWatcher(FrozenBaseModel):
     """Basic filesystem watcher."""
 
     fs_path: Path | list[Path] = Field(description="Path to watch for changes.")
-    db_path: Path | None = Field(
-        default=None, description="Path to the database. If not provided, will do everything in memory."
-    )
 
     def setup(self):
         """Setup the filesystem watcher."""
@@ -97,39 +98,10 @@ class FSWatcher(FrozenBaseModel):
 
     def update(self, *, supported_types: list[str] | None = None):
         """Update the database and return all invalidated paths."""
-        if self.db_path is None or not self.db_path.exists():
-            old_df = pl.DataFrame(
-                schema={
-                    "path": pl.Utf8,
-                    "size": pl.Int64,
-                    "mtime_ns": pl.Int64,
-                }
-            )
-        else:
-            old_df = pl.read_parquet(self.db_path)
-
         fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
         scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in fs_paths])
         if supported_types is not None:
             scanned_files = (p for p in scanned_files if p.suffix.strip(".") in supported_types)
-        new_rows = [
-            ({"path": str(path), "size": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns})
-            for path in scanned_files
-        ]
-        new_df = pl.DataFrame(new_rows, schema={"path": pl.Utf8, "size": pl.Int64, "mtime_ns": pl.Int64})
 
-        df_added = new_df.join(old_df, on="path", how="anti")
-        df_changed = new_df.join(old_df, on="path", how="inner").filter(
-            (pl.col("size") != pl.col("size_right")) | (pl.col("mtime_ns") != pl.col("mtime_ns_right"))
-        )
-        df_deleted = old_df.join(new_df, on="path", how="anti")
-
-        if self.db_path is not None:
-            new_df.write_parquet(self.db_path)
-
-        for path in df_added["path"].to_list():
-            publish(FileChanged(path=Path(path), event_type=ChangeType.ADDED))
-        for path in df_changed["path"].to_list():
-            publish(FileChanged(path=Path(path), event_type=ChangeType.CHANGED))
-        for path in df_deleted["path"].to_list():
-            publish(FileChanged(path=Path(path), event_type=ChangeType.REMOVED))
+        for p in scanned_files:
+            publish(FileChanged(path=p, event_type=ChangeType.ADDED))
