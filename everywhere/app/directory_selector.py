@@ -20,9 +20,9 @@ if TYPE_CHECKING:
     from textual.widgets.tree import TreeNode
 
 
-CHECKED = "☑ "
-UNCHECKED = "☐ "
-PARTIAL = "☐ "
+CHECKED = "[green]☑[/] "
+UNCHECKED = "[white]☐[/] "
+PARTIAL = "[yellow]☑[/] "
 
 
 @dataclass(frozen=True)

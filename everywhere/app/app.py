@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from rich.text import Text
 from textual import work
@@ -193,13 +193,53 @@ class EverywhereApp(App):
     def on_mount(self) -> None:
         """Set up the app when mounted."""
         table = self.query_one("#results_table", DataTable)
-        table.add_column("", width=2, key="confidence")
-        table.add_column("Name", width=24, key="file_name")
-        table.add_column("Path", width=100, key="path")
-        table.add_column("Size", width=9, key="size")
-        table.add_column("Date Modified", width=19, key="date_modified")
+        table.add_columns("", "Name", "Path", "Size", "Date Modified")
         table.cursor_type = "cell"
         self._setup_task = asyncio.create_task(self._setup_search())
+
+    def on_show(self) -> None:
+        """Called when the widget becomes visible - layout is ready."""
+        self._fit_table_columns()
+
+    def _fit_table_columns(self) -> None:
+        """Fit DataTable columns to widget width (Confidence=2, Size=5, Date=5; Name:Path = 1:3)."""
+        table = self.query_one("#results_table", DataTable)
+
+        console_width = self.console.size.width if hasattr(self.console, "size") else 0
+
+        estimated_table_width = console_width - 2  # 2 for the margins
+
+        total = estimated_table_width
+
+        if total <= 10:  # Need some reasonable minimum
+            return
+
+        if len(table.ordered_columns) != 5:
+            return
+
+        CONF, SIZE, DATE = 2, 8, 20  # noqa: N806
+        OVERHEAD = 10  # noqa: N806
+
+        fixed = CONF + SIZE + DATE + OVERHEAD
+        free = max(0, total - fixed)
+
+        # 1:3 split
+        name_w = max(1, free // 4)
+        path_w = max(1, free - name_w)
+
+        widths = [CONF, name_w, path_w, SIZE, DATE]
+        for index, desired in enumerate(widths):
+            column = table.ordered_columns[index]
+            column.auto_width = False
+            column.width = desired
+
+        if hasattr(table, "_require_update_dimensions"):
+            table._require_update_dimensions = True  # type: ignore[attr-defined]
+        table.refresh()
+
+    def on_resize(self, _: Any) -> None:
+        """Handle terminal resize."""
+        self._fit_table_columns()
 
     async def _setup_search(self) -> None:
         try:
