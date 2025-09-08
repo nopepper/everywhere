@@ -11,7 +11,9 @@ from onnxruntime import InferenceSession
 from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
-from ..common.pydantic import EventType, SearchQuery, SearchResult, WatchEvent
+from ..common.pydantic import SearchQuery, SearchResult
+from ..events import add_callback
+from ..events.watcher import ChangeType, FileChangeEvent
 from .search_provider import SearchProvider
 
 
@@ -53,6 +55,7 @@ class ONNXTextSearchProvider(SearchProvider):
         assert self.tokenizer is not None
         self.embed(["test"])
         self._index: dict[Path, np.ndarray] = {}
+        add_callback(FileChangeEvent, self.on_change)
 
     @cached_property
     def session(self) -> InferenceSession:
@@ -80,12 +83,12 @@ class ONNXTextSearchProvider(SearchProvider):
             embs = embs.reshape(1, -1)
         return _mean_pooling(embs, batch["attention_mask"])
 
-    def on_change(self, event: WatchEvent) -> None:
+    def on_change(self, event: FileChangeEvent) -> None:
         """Handle a change event."""
-        if event.event_type == EventType.REMOVED:
-            self._index.pop(event.value, None)
+        if event.event_type == ChangeType.REMOVED:
+            self._index.pop(event.path, None)
         else:
-            path = event.value
+            path = event.path
             if path.suffix.strip(".") not in self.supported_types:
                 return
 

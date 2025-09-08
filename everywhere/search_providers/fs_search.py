@@ -4,9 +4,8 @@ from collections.abc import Iterable
 
 from more_itertools import flatten
 from pydantic import Field
-from tqdm.auto import tqdm
 
-from ..common.pydantic import SearchQuery, SearchResult, WatchEvent
+from ..common.pydantic import SearchQuery, SearchResult
 from ..watchers.fs_watcher import FSWatcher
 from .search_provider import SearchProvider
 
@@ -23,11 +22,6 @@ class FSSearchProvider(SearchProvider):
         """Supported document types."""
         return list(set(flatten(provider.supported_types for provider in self.search_providers)))
 
-    def on_change(self, event: WatchEvent) -> None:
-        """Handle a change event."""
-        for provider in self.search_providers:
-            provider.on_change(event)
-
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:
         """Search for a query."""
         results: list[SearchResult] = []
@@ -41,8 +35,7 @@ class FSSearchProvider(SearchProvider):
         """Setup the provider."""
         for provider in self.search_providers:
             provider.setup()
-        for event in tqdm(list(self.watcher.update(supported_types=self.supported_types)), desc="Updating database"):
-            self.on_change(event)
+        self.watcher.update(supported_types=self.supported_types)
 
     def teardown(self) -> None:
         """Teardown the provider."""

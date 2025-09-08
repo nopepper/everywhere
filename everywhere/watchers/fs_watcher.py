@@ -1,13 +1,14 @@
 """Basic filesystem watcher."""
 
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Self
 
 import polars as pl
 from pydantic import Field, model_validator
 
-from ..common.pydantic import EventType, FrozenBaseModel, WatchEvent
+from ..common.pydantic import FrozenBaseModel
+from ..events import publish
+from ..events.watcher import ChangeType, FileChangeEvent
 
 
 class FSWatcher(FrozenBaseModel):
@@ -24,7 +25,7 @@ class FSWatcher(FrozenBaseModel):
         assert self.fs_path.is_dir()
         return self
 
-    def update(self, *, supported_types: list[str] | None = None) -> Iterable[WatchEvent]:
+    def update(self, *, supported_types: list[str] | None = None):
         """Update the database and return all invalidated paths."""
         if self.db_path is None or not self.db_path.exists():
             old_df = pl.DataFrame(
@@ -55,6 +56,9 @@ class FSWatcher(FrozenBaseModel):
         if self.db_path is not None:
             new_df.write_parquet(self.db_path)
 
-        yield from (WatchEvent(value=Path(path), event_type=EventType.ADDED) for path in df_added["path"].to_list())
-        yield from (WatchEvent(value=Path(path), event_type=EventType.CHANGED) for path in df_changed["path"].to_list())
-        yield from (WatchEvent(value=Path(path), event_type=EventType.REMOVED) for path in df_deleted["path"].to_list())
+        for path in df_added["path"].to_list():
+            publish(FileChangeEvent(path=Path(path), event_type=ChangeType.ADDED))
+        for path in df_changed["path"].to_list():
+            publish(FileChangeEvent(path=Path(path), event_type=ChangeType.CHANGED))
+        for path in df_deleted["path"].to_list():
+            publish(FileChangeEvent(path=Path(path), event_type=ChangeType.REMOVED))

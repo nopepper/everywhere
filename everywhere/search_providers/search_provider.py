@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from ..common.pydantic import FrozenBaseModel, SearchQuery, SearchResult, WatchEvent
+from ..common.pydantic import FrozenBaseModel, SearchQuery, SearchResult
 
 
 class SearchProvider(FrozenBaseModel, ABC):
@@ -13,10 +13,6 @@ class SearchProvider(FrozenBaseModel, ABC):
     @abstractmethod
     def supported_types(self) -> list[str]:
         """Supported document types."""
-
-    @abstractmethod
-    def on_change(self, event: WatchEvent) -> None:
-        """Handle a change event."""
 
     @abstractmethod
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:
