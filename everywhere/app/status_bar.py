@@ -71,3 +71,4 @@ class StatusBar(Horizontal):
             if self._progress_bar.display:
                 self._progress_bar.display = False
                 self._spacer.display = True
+                self._progress_tracker.reset()
