@@ -3,9 +3,13 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from typing import ClassVar
 
 from rich.text import Text
+from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Input
 
@@ -14,6 +18,7 @@ from ..search_providers.fs_search import FSSearchProvider
 from ..search_providers.onnx_text_search import ONNXTextSearchProvider
 from ..search_providers.search_provider import SearchQuery
 from ..watchers.fs_watcher import FSWatcher
+from .directory_selector import DirectorySelector
 from .progress import ProgressTracker
 from .status_bar import StatusBar
 
@@ -63,8 +68,53 @@ def confidence_to_color(confidence: float) -> Text:
     return Text("  ", style=f"on {hex_color}")
 
 
+class DirectoryIndexCommand(Provider):
+    """Command provider for directory indexing and application commands."""
+
+    async def discover(self) -> Hits:
+        """Expose common actions in the command palette."""
+        app = self.app
+        if isinstance(app, EverywhereApp):
+            yield DiscoveryHit(
+                "Pick indexed directories...", app.action_select_directories, help="Select directories to be indexed"
+            )
+            yield DiscoveryHit("Close application", app.action_close_app, help="Close the application")
+
+    async def search(self, query: str) -> Hits:
+        """Return actions when the query matches."""
+        app = self.app
+        if not isinstance(app, EverywhereApp):
+            return
+
+        matcher = self.matcher(query)
+
+        # Directory selection command
+        if query.lower().startswith("pick") or query.lower().startswith("dir") or query.lower().startswith("index"):
+            yield DiscoveryHit(
+                "Pick indexed directories...",
+                app.action_select_directories,
+                help="Select directories to be indexed",
+            )
+
+        # Close application command
+        close_command = "Close application"
+        score = matcher.match(close_command)
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight(close_command),
+                app.action_close_app,
+                help="Close the application",
+            )
+
+
 class EverywhereApp(App):
     """File search application."""
+
+    COMMANDS: ClassVar = {DirectoryIndexCommand}
+    BINDINGS: ClassVar = [
+        Binding("ctrl+c", "close_app", "Close application", priority=True),
+    ]
 
     CSS = """
     Input {
@@ -114,19 +164,15 @@ class EverywhereApp(App):
         """
         super().__init__()
 
-        # Initialize search system with hardcoded values from notebook
-        watcher = FSWatcher(
-            fs_path=Path(fs_path),
-        )
-        text_search = ONNXTextSearchProvider(
+        self.text_search_provider = ONNXTextSearchProvider(
             onnx_model_path=Path("models/all-MiniLM-L6-v2/onnx/model_quint8_avx2.onnx"),
             tokenizer_path=Path("models/all-MiniLM-L6-v2"),
         )
-        self.fs_search = FSSearchProvider(search_providers=[text_search], watcher=watcher)
+        watcher = FSWatcher(fs_path=Path(fs_path))
+        self.fs_search = FSSearchProvider(search_providers=[self.text_search_provider], watcher=watcher)
         self.search_setup_done = False
         self._debounce_task: asyncio.Task | None = None
         self._search_gen: int = 0
-        # Progress tracking and status bar
         self._progress = ProgressTracker()
 
     def compose(self) -> ComposeResult:
@@ -199,7 +245,6 @@ class EverywhereApp(App):
 
         if not results:
             confidence_label = confidence_to_color(0.0)
-            # Note: you have 4 columns; provide 4 cells.
             table.add_row("", "", "", "", label=confidence_label)
             return
 
@@ -217,6 +262,36 @@ class EverywhereApp(App):
                 )
             except (OSError, FileNotFoundError):
                 table.add_row(path.name, str(path), "N/A", "N/A", label=confidence_label)
+
+    @work
+    async def action_select_directories(self) -> None:
+        """Open the directory selection dialog."""
+        current_paths = self.fs_search.watcher.fs_path
+        if isinstance(current_paths, Path):
+            current_paths = [current_paths]
+
+        worker = self.run_worker(self.push_screen_wait(DirectorySelector(initial_paths=current_paths)))
+        selected = await worker.wait()  # returns the dismissal value
+
+        if not selected:
+            return
+
+        old_watcher_dump = self.fs_search.watcher.model_dump()
+        old_watcher_dump["fs_path"] = list(selected)
+        watcher = FSWatcher(**old_watcher_dump)
+        self.fs_search = FSSearchProvider(
+            search_providers=self.fs_search.search_providers,
+            watcher=watcher,
+        )
+
+        if hasattr(self, "_setup_task"):
+            self._setup_task.cancel()
+
+        self._setup_task = asyncio.create_task(self._setup_search())
+
+    def action_close_app(self) -> None:
+        """Close the application."""
+        self.exit()
 
 
 def main():

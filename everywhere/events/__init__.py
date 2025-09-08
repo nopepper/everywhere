@@ -2,13 +2,14 @@
 
 import contextvars
 import functools
+import queue
 import threading
 from collections import defaultdict
 from collections.abc import Callable
 from queue import SimpleQueue
 from typing import Any, TypeVar
 import uuid
-
+from dataclasses import dataclass
 from pydantic import Field
 from ..common.pydantic import FrozenBaseModel
 
@@ -30,7 +31,16 @@ class Event(FrozenBaseModel):
     correlation_id: str = Field(default_factory=_get_correlation_id, description="Correlation ID for the event.")
 
 
-_listeners: dict[type[Event] | None, list[SimpleQueue]] = defaultdict(list)
+@dataclass
+class _Listener:
+    """Listener for an event."""
+
+    lifecycle_id: str
+    event_type: type[Event] | None
+    queue: SimpleQueue
+
+
+_listeners: list[_Listener] = []
 _main_queue: SimpleQueue = SimpleQueue()
 
 T = TypeVar("T", bound=Event)
@@ -39,16 +49,18 @@ T = TypeVar("T", bound=Event)
 def _process_events():
     while True:
         event = _main_queue.get()
-        for listener in _listeners[None]:
-            listener.put(event)
-        for listener in _listeners[type(event)]:
-            listener.put(event)
+        for listener in _listeners:
+            if listener.event_type in (None, type(event)):
+                try:
+                    listener.queue.put(event)
+                except queue.ShutDown:
+                    continue
 
 
-def get_listener(event_type: type[Event] | None = None) -> SimpleQueue:
+def get_listener(lifecycle_id: str, event_type: type[Event] | None = None) -> SimpleQueue:
     """Create a listener for a specific event type."""
     queue = SimpleQueue()
-    _listeners[event_type].append(queue)
+    _listeners.append(_Listener(lifecycle_id=lifecycle_id, event_type=event_type, queue=queue))
     return queue
 
 
@@ -57,16 +69,25 @@ def publish(event: Event):
     _main_queue.put(event)
 
 
-def add_callback(event_type: type[T], callback: Callable[[T], None]):
+def add_callback(lifecycle_id: str, event_type: type[T], callback: Callable[[T], None]):
     """Add a callback to a listener."""
-    listener = get_listener(event_type)
+    listener = get_listener(lifecycle_id, event_type)
 
     def callback_func():
         while True:
-            event = listener.get()
+            try:
+                event = listener.get()
+            except queue.ShutDown:
+                break
             callback(event)
 
     threading.Thread(target=callback_func, daemon=True).start()
+
+
+def release(lifecycle_id: str):
+    """Release listeners for a lifecycle."""
+    global _listeners
+    _listeners = [listener for listener in _listeners if listener.lifecycle_id != lifecycle_id]
 
 
 def correlated(func: Callable) -> Callable:

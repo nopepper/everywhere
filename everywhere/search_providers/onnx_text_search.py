@@ -1,6 +1,7 @@
 """ONNX-based text search provider."""
 
 import logging
+import threading
 from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
@@ -12,8 +13,15 @@ from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events import add_callback, correlated, publish
-from ..events.search_provder import IndexingFinished, IndexingStarted, SetupFinished, SetupStarted
+from ..events import add_callback, correlated, publish, release
+from ..events.search_provder import (
+    IndexingFinished,
+    IndexingStarted,
+    SetupFinished,
+    SetupStarted,
+    TeardownFinished,
+    TeardownStarted,
+)
 from ..events.watcher import ChangeType, FileChanged
 from .search_provider import SearchProvider
 
@@ -58,9 +66,16 @@ class ONNXTextSearchProvider(SearchProvider):
         assert self.tokenizer is not None
         self.embed(["test"])
         self._index: dict[Path, np.ndarray] = {}
-        add_callback(FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
-        add_callback(FileChanged, self.on_change)
+        self._index_lock = threading.Lock()
+        add_callback(str(id(self)), FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
+        add_callback(str(id(self)), FileChanged, self.on_change)
         publish(SetupFinished())
+
+    def teardown(self) -> None:
+        """Teardown the provider."""
+        publish(TeardownStarted())
+        release(str(id(self)))
+        publish(TeardownFinished())
 
     @cached_property
     def session(self) -> InferenceSession:
@@ -94,7 +109,8 @@ class ONNXTextSearchProvider(SearchProvider):
         success = False
         try:
             if event.event_type == ChangeType.REMOVED:
-                self._index.pop(event.path, None)
+                with self._index_lock:
+                    self._index.pop(event.path, None)
             else:
                 path = event.path
                 if path.suffix.strip(".") not in self.supported_types:
@@ -120,7 +136,8 @@ class ONNXTextSearchProvider(SearchProvider):
                 text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
-                self._index[path] = np.concatenate([self.embed([chunk]) for chunk in text_chunks], axis=0)
+                with self._index_lock:
+                    self._index[path] = np.concatenate([self.embed([chunk]) for chunk in text_chunks], axis=0)
                 success = True
         finally:
             publish(IndexingFinished(success=success, path=path))
@@ -129,7 +146,8 @@ class ONNXTextSearchProvider(SearchProvider):
         """Search for a query."""
         results = []
         query_embedding = self.embed([query.text])[0]
-        for path, embeddings in self._index.items():
-            similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
-            results.append(SearchResult(value=path, confidence=_confidence(similarity)))
+        with self._index_lock:
+            for path, embeddings in self._index.items():
+                similarity = max(_similarity(query_embedding, emb) for emb in embeddings)
+                results.append(SearchResult(value=path, confidence=_confidence(similarity)))
         return results
