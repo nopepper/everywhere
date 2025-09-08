@@ -1,10 +1,10 @@
 """Basic filesystem watcher."""
 
 from pathlib import Path
-from typing import Self
 
 import polars as pl
-from pydantic import Field, model_validator
+from more_itertools import flatten
+from pydantic import Field, field_validator
 
 from ..common.pydantic import FrozenBaseModel
 from ..events import publish
@@ -14,16 +14,26 @@ from ..events.watcher import ChangeType, FileChanged
 class FSWatcher(FrozenBaseModel):
     """Basic filesystem watcher."""
 
-    fs_path: Path = Field(description="Path to watch for changes.")
+    fs_path: Path | list[Path] = Field(description="Path to watch for changes.")
     db_path: Path | None = Field(
         default=None, description="Path to the database. If not provided, will do everything in memory."
     )
 
-    @model_validator(mode="after")
-    def validate_watcher(self) -> Self:
-        """Validate the watcher."""
-        assert self.fs_path.is_dir()
-        return self
+    @field_validator("fs_path")
+    @classmethod
+    def validate_fs_path(cls, fs_path: Path | list[Path]) -> Path | list[Path]:
+        """Validate the filesystem paths."""
+        fs_paths = fs_path if isinstance(fs_path, list) else [fs_path]
+        fs_paths = list(set(fs_paths))
+
+        for fs_path in fs_paths:
+            if not fs_path.is_dir():
+                raise ValueError(f"Path {fs_path} is not a directory.")
+
+        # Remove paths that are children of other paths in the list
+        filtered_paths = [p for p in fs_paths if not any(p != other and other.is_relative_to(p) for other in fs_paths)]
+
+        return filtered_paths
 
     def update(self, *, supported_types: list[str] | None = None):
         """Update the database and return all invalidated paths."""
@@ -38,7 +48,8 @@ class FSWatcher(FrozenBaseModel):
         else:
             old_df = pl.read_parquet(self.db_path)
 
-        scanned_files = (p for p in self.fs_path.rglob("*") if p.is_file())
+        fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
+        scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in fs_paths])
         if supported_types is not None:
             scanned_files = (p for p in scanned_files if p.suffix.strip(".") in supported_types)
         new_rows = [
