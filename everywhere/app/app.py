@@ -115,14 +115,14 @@ class EverywhereApp(App):
         super().__init__()
 
         # Initialize search system with hardcoded values from notebook
-        self.watcher = FSWatcher(
+        watcher = FSWatcher(
             fs_path=Path(fs_path),
         )
-        self.text_search = ONNXTextSearchProvider(
+        text_search = ONNXTextSearchProvider(
             onnx_model_path=Path("models/all-MiniLM-L6-v2/onnx/model_quint8_avx2.onnx"),
             tokenizer_path=Path("models/all-MiniLM-L6-v2"),
         )
-        self.fs_search = FSSearchProvider(search_providers=[self.text_search], watcher=self.watcher)
+        self.fs_search = FSSearchProvider(search_providers=[text_search], watcher=watcher)
         self.search_setup_done = False
         self._debounce_task: asyncio.Task | None = None
         self._search_gen: int = 0
