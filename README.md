@@ -23,30 +23,31 @@ The project was inspired by [Everything](https://www.voidtools.com/support/every
   - [ ] PDF search (text only)
   - [ ] Word document search (text only)
 - [ ] Improve performance
-  - [ ] Maximize throughput on CPU
-  - [ ] Vector database support & saving/loading
-  - [ ] File watching with [watchdog](https://github.com/gorakhargosh/watchdog)
+  - [x] Maximize throughput on CPU
+  - [x] Vector database support
+  - [ ] Vector database saving/loading
+  - [x] File watching with [watchdog](https://github.com/gorakhargosh/watchdog)
 - [ ] Improve UX
-  - [ ] Indexing in background thread
-  - [ ] Indexing progress bar
-  - [ ] Limit search results to 1000 items
+  - [x] Indexing in background thread
+  - [x] Indexing progress bar
+  - [x] Limit search results to 1000 items
   - [ ] Aggregate search results from multiple search providers
   - [ ] Soft operators
     - [ ] Add OR operator !or (additive)
     - [ ] Add AND operator !and (multiplicative)
     - [ ] Add NOT operator !not (inverse)
-  - [ ] FS watcher checkbox selector
-    - [ ] Let user choose which directories to watch
+  - [x] FS watcher checkbox selector
+    - [x] Let user choose which directories to watch
   - [ ] Search provider settings
     - [ ] For each search provider, show checkboxes for each document type it supports
 - [ ] Improve quality
-  - [ ] Normalize embeddings
+  - [x] Normalize embeddings
   - [ ] Add small overlap when chunking
-  - [ ] Chunks at 256 tokens, unless the document is very small
+  - [x] Chunks at 256 tokens, unless the document is very small
   - [ ] Nested RAG (successive halving)
 - [ ] Improve reliability
   - [ ] Add tests
-  - [ ] Add logging & events
+  - [x] Add logging & events
 - [ ] Documentation & OSS
   - [x] License
   - [ ] Readme
