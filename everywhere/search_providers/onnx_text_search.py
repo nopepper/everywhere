@@ -58,6 +58,7 @@ class ONNXTextSearchProvider(SearchProvider):
         assert self.tokenizer is not None
         self.embed(["test"])
         self._index: dict[Path, np.ndarray] = {}
+        add_callback(FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
         add_callback(FileChanged, self.on_change)
         publish(SetupFinished())
 
@@ -92,7 +93,6 @@ class ONNXTextSearchProvider(SearchProvider):
         """Handle a change event."""
         success = False
         try:
-            publish(IndexingStarted(path=event.path))
             if event.event_type == ChangeType.REMOVED:
                 self._index.pop(event.path, None)
             else:

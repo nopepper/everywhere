@@ -14,6 +14,8 @@ from ..search_providers.fs_search import FSSearchProvider
 from ..search_providers.onnx_text_search import ONNXTextSearchProvider
 from ..search_providers.search_provider import SearchQuery
 from ..watchers.fs_watcher import FSWatcher
+from .progress import ProgressTracker
+from .status_bar import StatusBar
 
 DEBOUNCE_LATENCY = 0.05
 RESULT_LIMIT = 1000
@@ -79,6 +81,27 @@ class EverywhereApp(App):
     .search-input {
         border: solid $accent;
     }
+
+    .status-bar {
+        dock: bottom;
+        height: 1;
+        padding: 0 1;
+    }
+
+    #status_progress_bar {
+        width: 1fr;
+        margin-right: 1;
+    }
+
+    #status_spacer {
+        width: 1fr;
+    }
+
+    #status_text {
+        width: 25;
+        content-align: right middle;
+        min-width: 25;
+    }
     """
 
     search_term = reactive("")
@@ -103,12 +126,15 @@ class EverywhereApp(App):
         self.search_setup_done = False
         self._debounce_task: asyncio.Task | None = None
         self._search_gen: int = 0
+        # Progress tracking and status bar
+        self._progress = ProgressTracker()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
         yield Input(placeholder="Search files and folders...", classes="search-input", id="search_input")
         yield DataTable(id="results_table")
+        yield StatusBar(progress=self._progress)
 
     def on_mount(self) -> None:
         """Set up the app when mounted."""
