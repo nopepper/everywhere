@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
-from more_itertools import unique_everseen
+from more_itertools import chunked, unique_everseen
 from onnxruntime import InferenceSession
 from pydantic import Field
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
@@ -52,9 +52,16 @@ class IndexHelper:
 
     def add(self, path: Path, embedding: np.ndarray) -> None:
         """Add an embedding to the index."""
-        new_id = self._index.add_item(embedding)
-        self._id_to_path[new_id] = path
-        self._path_to_id[path] = new_id
+        if len(embedding.shape) == 1:
+            new_id = self._index.add_item(embedding)
+            self._id_to_path[new_id] = path
+            self._path_to_id[path] = new_id
+        else:
+            assert len(embedding.shape) == 2
+            new_ids = self._index.add_items(embedding)
+            for new_id in new_ids:
+                self._id_to_path[new_id] = path
+                self._path_to_id[path] = new_id
         return new_id
 
     def remove(self, path: Path) -> bool:
@@ -81,7 +88,7 @@ class ONNXTextSearchProvider(SearchProvider):
 
     k: int = Field(default=100, description="Number of results to return.")
     min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")
-    max_chunk_size: int = Field(default=2048, description="Maximum chunk size for the text.")
+    max_chunk_size: int = Field(default=4096, description="Maximum chunk size for the text.")
     max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
 
     @property
@@ -171,10 +178,10 @@ class ONNXTextSearchProvider(SearchProvider):
                 text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
-                for chunk in text_chunks:
+                for batch in chunked(text_chunks, 8):
                     self._idle.wait()
-                    emb = self.embed([chunk])[0]
-                    emb = emb / np.linalg.norm(emb)
+                    emb = self.embed(batch)
+                    emb = emb / np.linalg.norm(emb, axis=-1, keepdims=True)
                     self._index.add(path, emb)
                 success = True
         finally:
