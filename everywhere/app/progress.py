@@ -1,7 +1,7 @@
 """Progress tracker."""
 
 from ..events import add_callback
-from ..events.search_provder import IndexingFinished, IndexingStarted
+from ..events.search_provder import GotIndexingRequest, IndexingFinished
 
 
 class ProgressTracker:
@@ -11,7 +11,7 @@ class ProgressTracker:
         """Initialize the progress tracker."""
         self._total_tasks = 0
         self._finished_tasks = 0
-        add_callback(IndexingStarted, self.on_indexing_started)
+        add_callback(GotIndexingRequest, self.on_indexing_request)
         add_callback(IndexingFinished, self.on_indexing_finished)
 
     def reset(self) -> None:
@@ -19,7 +19,7 @@ class ProgressTracker:
         self._total_tasks = 0
         self._finished_tasks = 0
 
-    def on_indexing_started(self, event: IndexingStarted) -> None:
+    def on_indexing_request(self, event: GotIndexingRequest) -> None:
         """Handle indexing started event."""
         self._total_tasks += 1
 

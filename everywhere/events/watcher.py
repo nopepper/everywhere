@@ -9,9 +9,8 @@ from . import Event
 class ChangeType(StrEnum):
     """Event type."""
 
-    ADDED = "added"
-    CHANGED = "changed"
-    REMOVED = "removed"
+    UPSERT = "upsert"
+    DELETE = "delete"
 
 
 class FileChanged(Event):

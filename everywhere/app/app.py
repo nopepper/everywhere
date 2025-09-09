@@ -1,6 +1,6 @@
 """Application entry point."""
 
-import asyncio
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -13,16 +13,18 @@ from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Input
 
-from ..common.pydantic import SearchResult
-from ..search_providers.fs_search import FSSearchProvider
+from everywhere.events.search_provder import IndexingFinished
+
+from ..events import add_callback, publish
+from ..events.app import UserSearched
 from ..search_providers.onnx_text_search import ONNXTextSearchProvider
-from ..search_providers.search_provider import SearchQuery
 from ..watchers.fs_watcher import FSWatcher
+from .collector import ResultsCollector
 from .directory_selector import DirectorySelector
 from .progress import ProgressTracker
 from .status_bar import StatusBar
 
-DEBOUNCE_LATENCY = 0.05
+DEBOUNCE_LATENCY = 0.1
 RESULT_LIMIT = 1000
 
 
@@ -172,16 +174,20 @@ class EverywhereApp(App):
         """
         super().__init__()
 
-        self.text_search_provider = ONNXTextSearchProvider(
-            onnx_model_path=Path("models/all-MiniLM-L6-v2/onnx/model_quint8_avx2.onnx"),
-            tokenizer_path=Path("models/all-MiniLM-L6-v2"),
+        search_providers = [
+            ONNXTextSearchProvider(
+                onnx_model_path=Path("models/all-MiniLM-L6-v2/onnx/model_quint8_avx2.onnx"),
+                tokenizer_path=Path("models/all-MiniLM-L6-v2"),
+            )
+        ]
+        self.search_providers = [provider.start_eventful() for provider in search_providers]
+        self.watcher = FSWatcher(
+            fs_path=Path(fs_path),
+            supported_types=set.union(*[provider.supported_types for provider in search_providers]),
         )
-        watcher = FSWatcher(fs_path=Path(fs_path))
-        self.fs_search = FSSearchProvider(search_providers=[self.text_search_provider], watcher=watcher)
-        self.search_setup_done = False
-        self._debounce_task: asyncio.Task | None = None
-        self._search_gen: int = 0
+        self.watcher.start()
         self._progress = ProgressTracker()
+        self._results_collector = ResultsCollector()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -195,7 +201,12 @@ class EverywhereApp(App):
         table = self.query_one("#results_table", DataTable)
         table.add_columns("", "Name", "Path", "Size", "Date Modified")
         table.cursor_type = "cell"
-        self._setup_task = asyncio.create_task(self._setup_search())
+        self._update_results_timer = self.set_interval(0.1, self._update_results_table)
+        add_callback(IndexingFinished, self.on_indexing_finished)
+
+    def on_indexing_finished(self, event: IndexingFinished) -> None:
+        """Handle indexing finished event."""
+        self._publish_search_soon(self.query_one("#search_input", Input).value)
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""
@@ -241,79 +252,58 @@ class EverywhereApp(App):
         """Handle terminal resize."""
         self._fit_table_columns()
 
-    async def _setup_search(self) -> None:
-        try:
-            await asyncio.get_event_loop().run_in_executor(None, self.fs_search.setup)
-            self.search_setup_done = True
-            if self.search_term:
-                await self._perform_search(self._search_gen)
-        except Exception as e:
-            self.notify(f"Failed to initialize search: {e}", severity="error")
+    def _publish_search_soon(self, search_term: str) -> None:
+        """Publish a search soon (debounced)."""
+        self._update_results_timer.pause()
+        if hasattr(self, "_search_timer") and self._search_timer is not None:
+            self._search_timer.cancel()
+
+        def _publish_search():
+            publish(UserSearched(query=search_term))
+            self._search_timer = None
+            self._update_results_timer.resume()
+
+        self._search_timer = threading.Timer(DEBOUNCE_LATENCY, _publish_search)
+        self._search_timer.start()
 
     def on_input_changed(self, message: Input.Changed) -> None:
         """Handle search input changes."""
         if message.input.id != "search_input":
             return
-        self.search_term = message.value
-        self._search_gen += 1
-        gen = self._search_gen
+        self._publish_search_soon(message.value)
 
-        if self._debounce_task and not self._debounce_task.done():
-            self._debounce_task.cancel()
-
-        self._debounce_task = asyncio.create_task(self._debounced_search(gen))
-
-    async def _debounced_search(self, gen: int) -> None:
-        try:
-            await asyncio.sleep(DEBOUNCE_LATENCY)
-        except asyncio.CancelledError:
-            return
-        await self._perform_search(gen)
-
-    async def _perform_search(self, gen: int) -> None:
-        """Perform search and update results if still the latest generation."""
-        if not self.search_term.strip() or not self.search_setup_done:
-            if gen == self._search_gen:
-                table = self.query_one("#results_table", DataTable)
-                table.clear()
+    def _update_results_table(self) -> None:
+        if not self._results_collector.has_new_results:
             return
 
-        try:
-            search_query = SearchQuery(text=self.search_term)
-            results = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: list(self.fs_search.search(search_query))
-            )
-            results = results[:RESULT_LIMIT]
-
-            if gen == self._search_gen:
-                await self._update_results_table(results)
-        except Exception as e:
-            if gen == self._search_gen:
-                self.notify(f"Search error: {e}", severity="error")
-
-    async def _update_results_table(self, results: list[SearchResult]) -> None:
         table = self.query_one("#results_table", DataTable)
-        table.clear()
+        with self.batch_update():
+            table.clear()
 
-        for result in results:
-            path = result.value
-            confidence_label = confidence_to_color(result.confidence)
-            try:
-                stat = path.stat()
-                table.add_row(
-                    confidence_label,
-                    path.name,
-                    str(path),
-                    format_size(stat.st_size),
-                    format_date(stat.st_mtime_ns),
-                )
-            except (OSError, FileNotFoundError):
-                table.add_row(confidence_label, path.name, str(path), "N/A", "N/A")
+            current_search_term = self.query_one("#search_input", Input).value
+            if current_search_term == "" or current_search_term != self._results_collector.current_query:
+                return
+
+            results = self._results_collector.current_results
+            for result in results:
+                path = result.value
+                confidence_label = confidence_to_color(result.confidence)
+                try:
+                    stat = path.stat()
+                    table.add_row(
+                        confidence_label,
+                        path.name,
+                        str(path),
+                        format_size(stat.st_size),
+                        format_date(stat.st_mtime_ns),
+                    )
+                except (OSError, FileNotFoundError):
+                    table.add_row(confidence_label, path.name, str(path), "N/A", "N/A")
 
     @work
     async def action_select_directories(self) -> None:
         """Open the directory selection dialog."""
-        current_paths = self.fs_search.watcher.fs_path
+        current_paths = self.watcher.fs_path
         if isinstance(current_paths, Path):
             current_paths = [current_paths]
 
@@ -323,18 +313,11 @@ class EverywhereApp(App):
         if not selected:
             return
 
-        old_watcher_dump = self.fs_search.watcher.model_dump()
+        old_watcher_dump = self.watcher.model_dump()
         old_watcher_dump["fs_path"] = list(selected)
-        watcher = FSWatcher(**old_watcher_dump)
-        self.fs_search = FSSearchProvider(
-            search_providers=self.fs_search.search_providers,
-            watcher=watcher,
-        )
-
-        if hasattr(self, "_setup_task"):
-            self._setup_task.cancel()
-
-        self._setup_task = asyncio.create_task(self._setup_search())
+        self.watcher.stop()
+        del self.watcher
+        self.watcher = FSWatcher(**old_watcher_dump)
 
     def action_close_app(self) -> None:
         """Close the application."""

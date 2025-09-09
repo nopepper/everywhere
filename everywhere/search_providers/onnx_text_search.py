@@ -16,12 +16,6 @@ from transformers import AutoTokenizer, PreTrainedTokenizerFast
 from voyager import Index, Space, StorageDataType
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events import add_callback, correlated, publish
-from ..events.search_provder import (
-    IndexingFinished,
-    IndexingStarted,
-)
-from ..events.watcher import ChangeType, FileChanged
 from .search_provider import SearchProvider
 
 
@@ -116,11 +110,10 @@ class ONNXTextSearchProvider(SearchProvider):
         return eng
 
     @property
-    def supported_types(self) -> list[str]:
+    def supported_types(self) -> set[str]:
         """Supported document types."""
-        return ["txt", "md", "docx", "pdf", "pptx", "epub"]
+        return {"txt", "md", "docx", "pdf", "pptx", "epub"}
 
-    @correlated
     def setup(self) -> None:
         """Setup the provider."""
         assert self.session is not None
@@ -130,8 +123,6 @@ class ONNXTextSearchProvider(SearchProvider):
         self._index_lock = threading.Lock()
         self._idle = threading.Event()
         self._idle.set()
-        add_callback(FileChanged, lambda event: publish(IndexingStarted(path=event.path)))
-        add_callback(FileChanged, self.on_change)
 
     def teardown(self) -> None:
         """Teardown the provider."""
@@ -186,49 +177,47 @@ class ONNXTextSearchProvider(SearchProvider):
             embs = embs.reshape(1, -1)
         return _mean_pooling(embs, batch["attention_mask"])
 
-    @correlated
-    def on_change(self, event: FileChanged) -> None:
+    def update(self, path: Path) -> bool:
         """Handle a change event."""
-        success = False
-        try:
-            if event.event_type == ChangeType.REMOVED:
-                with self._index_lock:
-                    self._index.remove(event.path)
-            else:
-                path = event.path
-                if path.suffix.strip(".") not in self.supported_types:
-                    return
-                if path.stat().st_size > self.max_filesize_mb * 1024 * 1024:
-                    return
-                text = self.markitdown.convert(path).markdown
-                text_chunks = self._chunk(text)
+        if path.suffix.strip(".") not in self.supported_types:
+            return False
 
-                if path.suffix.strip(".") == "pdf":
-                    with fitz.open(path) as doc:
-                        for page in doc:
-                            for img in page.get_images(full=True):
-                                xref = img[0]
-                                base_image = doc.extract_image(xref)
-                                image_bytes = base_image["image"]
-                                texts = cast(
-                                    "tuple[str, ...] | None",
-                                    self.ocr_engine(image_bytes).txts,  # type: ignore
-                                )
-                                if texts is None or len(texts) == 0:
-                                    continue
-                                ocr_text = "\n".join(texts)
-                                text_chunks.extend(self._chunk(ocr_text))
+        if path.stat().st_size > self.max_filesize_mb * 1024 * 1024:
+            return False
 
-                if len(text_chunks) == 0:
-                    return
-                for chunk in text_chunks:
-                    self._idle.wait()
-                    emb = self.embed([chunk])[0]
-                    emb = emb / np.linalg.norm(emb)
-                    self._index.add(path, emb)
-                success = True
-        finally:
-            publish(IndexingFinished(success=success, path=event.path))
+        if not path.exists():
+            with self._index_lock:
+                self._index.remove(path)
+            return True
+
+        text = self.markitdown.convert(path).markdown
+        text_chunks = self._chunk(text)
+
+        if path.suffix.strip(".") == "pdf":
+            with fitz.open(path) as doc:
+                for page in doc:
+                    for img in page.get_images(full=True):
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        texts = cast(
+                            "tuple[str, ...] | None",
+                            self.ocr_engine(image_bytes).txts,  # type: ignore
+                        )
+                        if texts is None or len(texts) == 0:
+                            continue
+                        ocr_text = "\n".join(texts)
+                        text_chunks.extend(self._chunk(ocr_text))
+
+        if len(text_chunks) == 0:
+            return False
+
+        for chunk in text_chunks:
+            self._idle.wait()
+            emb = self.embed([chunk])[0]
+            emb = emb / np.linalg.norm(emb)
+            self._index.add(path, emb)
+        return True
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""

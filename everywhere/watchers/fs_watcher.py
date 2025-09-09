@@ -2,6 +2,7 @@
 
 import os
 import threading
+from collections.abc import Iterable
 from pathlib import Path
 
 from more_itertools import flatten
@@ -40,7 +41,7 @@ class _FSWatchdogEventHandler(FileSystemEventHandler):
                 publish(
                     FileChanged(
                         path=src_path,
-                        event_type=ChangeType.REMOVED if event.event_type == "deleted" else ChangeType.CHANGED,
+                        event_type=ChangeType.DELETE if event.event_type == "deleted" else ChangeType.UPSERT,
                     )
                 )
                 del self.timers[src_path]
@@ -70,16 +71,20 @@ class FSWatcher(FrozenBaseModel):
     """Basic filesystem watcher."""
 
     fs_path: Path | list[Path] = Field(description="Path to watch for changes.")
+    supported_types: set[str] | None = Field(default=None, description="Supported file types.")
 
-    def setup(self):
+    def start(self):
         """Setup the filesystem watcher."""
         fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
         self._fs_watcher = _FSWatchdog(fs_paths)
         self._fs_watcher.start()
+        self._running = True
+        threading.Thread(target=self._walk_and_publish, daemon=True).start()
 
-    def teardown(self):
+    def stop(self):
         """Teardown the filesystem watcher."""
         self._fs_watcher.stop()
+        self._running = False
 
     @field_validator("fs_path")
     @classmethod
@@ -93,18 +98,22 @@ class FSWatcher(FrozenBaseModel):
                 raise ValueError(f"Path {fs_path} is not a directory.")
 
         # Remove paths that are children of other paths in the list
-        filtered_paths = [p for p in fs_paths if not any(p != other and other.is_relative_to(p) for other in fs_paths)]
+        filtered_paths = [p for p in fs_paths if not any(p != other and p.is_relative_to(other) for other in fs_paths)]
 
         return filtered_paths
 
-    def update(self, *, supported_types: list[str] | None = None):
-        """Update the database and return all invalidated paths."""
+    def walk_all(self) -> Iterable[Path]:
+        """Return all invalidated paths."""
         fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
         scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in fs_paths])
         scanned_files = (p for p in scanned_files if os.access(p, os.R_OK))
 
-        if supported_types is not None:
-            scanned_files = (p for p in scanned_files if p.suffix.strip(".") in supported_types)
+        if self.supported_types is not None:
+            scanned_files = (p for p in scanned_files if p.suffix.strip(".") in self.supported_types)
+        return scanned_files
 
-        for p in scanned_files:
-            publish(FileChanged(path=p, event_type=ChangeType.ADDED))
+    def _walk_and_publish(self):
+        for p in self.walk_all():
+            if not self._running:
+                break
+            publish(FileChanged(path=p, event_type=ChangeType.UPSERT))

@@ -1,0 +1,61 @@
+"""Results collector."""
+
+import threading
+from itertools import groupby
+
+from ..common.pydantic import SearchResult
+from ..events import add_callback
+from ..events.app import UserSearched
+from ..events.search_provder import GotSearchResult
+
+
+class ResultsCollector:
+    """Results collector."""
+
+    def __init__(self):
+        """Initialize the results collector."""
+        self._current_query = None
+        self._current_results: list[GotSearchResult] = []
+        self._lock = threading.Lock()
+        self._last_state = 0
+        self._state = 0
+        add_callback(UserSearched, self.on_user_searched)
+        add_callback(GotSearchResult, self.on_got_search_result)
+
+    def on_user_searched(self, event: UserSearched) -> None:
+        """Handle user searched event."""
+        with self._lock:
+            self._current_query = event.query
+            self._current_results = [r for r in self._current_results if r.query == event.query]
+            self._state += 1
+
+    def on_got_search_result(self, event: GotSearchResult) -> None:
+        """Handle got search result event."""
+        with self._lock:
+            if event.query == self._current_query:
+                self._current_results.append(event)
+                self._state += 1
+
+    @property
+    def current_query(self) -> str:
+        """Current query."""
+        with self._lock:
+            return self._current_query or ""
+
+    @property
+    def has_new_results(self) -> bool:
+        """Has new results."""
+        return self._state > self._last_state
+
+    @property
+    def current_results(self) -> list[SearchResult]:
+        """Current results."""
+        with self._lock:
+            self._last_state = self._state
+            results = [e.result for e in self._current_results]
+            results_agg: list[SearchResult] = []
+            for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
+                results_agg.append(max(group, key=lambda x: x.confidence))
+
+            results_agg.sort(key=lambda x: x.confidence, reverse=True)
+            return results_agg
