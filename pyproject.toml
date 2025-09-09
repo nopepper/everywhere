@@ -15,7 +15,7 @@ dependencies = [
     "polars>=1.33.0",
     "voyager>=2.1.0",
     "watchdog>=6.0.0",
-    "markitdown>=0.1.2",
+    "markitdown[pdf,docx,pptx]>=0.1.2",
     "rapidocr>=3.4.0",
     "pymupdf>=1.26.4",
 ]
