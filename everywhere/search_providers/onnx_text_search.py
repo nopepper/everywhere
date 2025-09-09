@@ -212,7 +212,7 @@ class ONNXTextSearchProvider(SearchProvider):
                                 image_bytes = base_image["image"]
                                 texts = cast(
                                     "tuple[str, ...] | None",
-                                    self.ocr_engine(image_bytes, use_det=False, use_cls=False, use_rec=True).txts,  # type: ignore
+                                    self.ocr_engine(image_bytes).txts,  # type: ignore
                                 )
                                 if texts is None or len(texts) == 0:
                                     continue
