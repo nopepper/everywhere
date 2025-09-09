@@ -14,7 +14,7 @@ class ResultsCollector:
 
     def __init__(self):
         """Initialize the results collector."""
-        self._current_query = None
+        self._current_query = ""
         self._current_results: list[GotSearchResult] = []
         self._lock = threading.Lock()
         self._last_state = 0
@@ -40,22 +40,22 @@ class ResultsCollector:
     def current_query(self) -> str:
         """Current query."""
         with self._lock:
-            return self._current_query or ""
+            return self._current_query
 
     @property
     def has_new_results(self) -> bool:
         """Has new results."""
         return self._state > self._last_state
 
-    @property
-    def current_results(self) -> list[SearchResult]:
+    def sync_results(self) -> tuple[str, list[SearchResult]]:
         """Current results."""
         with self._lock:
             self._last_state = self._state
+            query = self._current_query
             results = [e.result for e in self._current_results]
-            results_agg: list[SearchResult] = []
-            for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
-                results_agg.append(max(group, key=lambda x: x.confidence))
+        results_agg: list[SearchResult] = []
+        for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
+            results_agg.append(max(group, key=lambda x: x.confidence))
 
-            results_agg.sort(key=lambda x: x.confidence, reverse=True)
-            return results_agg
+        results_agg.sort(key=lambda x: x.confidence, reverse=True)
+        return query, results_agg

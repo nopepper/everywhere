@@ -254,6 +254,10 @@ class EverywhereApp(App):
 
     def _publish_search_soon(self, search_term: str) -> None:
         """Publish a search soon (debounced)."""
+        # Reject empty searches
+        if search_term == "":
+            return
+
         self._update_results_timer.pause()
         if hasattr(self, "_search_timer") and self._search_timer is not None:
             self._search_timer.cancel()
@@ -276,15 +280,15 @@ class EverywhereApp(App):
         if not self._results_collector.has_new_results:
             return
 
+        current_query, results = self._results_collector.sync_results()
         table = self.query_one("#results_table", DataTable)
         with self.batch_update():
             table.clear()
 
             current_search_term = self.query_one("#search_input", Input).value
-            if current_search_term == "" or current_search_term != self._results_collector.current_query:
+            if current_search_term == "" or current_search_term != current_query:
                 return
 
-            results = self._results_collector.current_results
             for result in results:
                 path = result.value
                 confidence_label = confidence_to_color(result.confidence)
