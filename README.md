@@ -20,8 +20,9 @@ The project was inspired by [Everything](https://www.voidtools.com/support/every
 
 - [ ] Add more search providers
   - [ ] Fuzzy string search
-  - [ ] PDF search (text only)
-  - [ ] Word document search (text only)
+  - [x] PDF search (text only)
+  - [x] PDF search (images)
+  - [x] Word document search (text only)
 - [ ] Improve performance
   - [x] Maximize throughput on CPU
   - [x] Vector database support
@@ -31,7 +32,7 @@ The project was inspired by [Everything](https://www.voidtools.com/support/every
   - [x] Indexing in background thread
   - [x] Indexing progress bar
   - [x] Limit search results to 1000 items
-  - [ ] Aggregate search results from multiple search providers
+  - [x] Aggregate search results from multiple search providers
   - [ ] Soft operators
     - [ ] Add OR operator !or (additive)
     - [ ] Add AND operator !and (multiplicative)

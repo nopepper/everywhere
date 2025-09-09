@@ -1,6 +1,7 @@
 """Simple aggregated search provider."""
 
 from collections.abc import Iterable
+from itertools import groupby
 
 from more_itertools import flatten
 from pydantic import Field
@@ -28,8 +29,13 @@ class FSSearchProvider(SearchProvider):
         for provider in self.search_providers:
             results.extend(provider.search(query))
         results = [result for result in results if result.confidence >= self.confidence_threshold]
-        results.sort(key=lambda x: x.confidence, reverse=True)
-        return results
+
+        results_agg = []
+        for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
+            results_agg.append(max(group, key=lambda x: x.confidence))
+
+        results_agg.sort(key=lambda x: x.confidence, reverse=True)
+        return results_agg
 
     def setup(self) -> None:
         """Setup the provider."""

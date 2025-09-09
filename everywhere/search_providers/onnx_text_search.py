@@ -1,16 +1,17 @@
 """ONNX-based text search provider."""
 
-import logging
 import os
 import threading
 from functools import cached_property
 from pathlib import Path
 from typing import cast
 
+import fitz
 import numpy as np
 import onnxruntime as ort
-from more_itertools import unique_everseen
+from markitdown import MarkItDown
 from pydantic import Field
+from rapidocr import EngineType, LangDet, ModelType, OCRVersion, RapidOCR
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 from voyager import Index, Space, StorageDataType
 
@@ -95,10 +96,29 @@ class ONNXTextSearchProvider(SearchProvider):
     overlap: int = Field(default=128, description="Overlap for the text chunks.")
     max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
 
+    @cached_property
+    def markitdown(self) -> MarkItDown:
+        """MarkItDown."""
+        return MarkItDown()
+
+    @cached_property
+    def ocr_engine(self) -> RapidOCR:
+        """RapidOCR."""
+        eng = RapidOCR(
+            params={
+                "Global.log_level": "error",
+                "Det.engine_type": EngineType.ONNXRUNTIME,
+                "Det.lang_type": LangDet.MULTI,
+                "Det.model_type": ModelType.MOBILE,
+                "Det.ocr_version": OCRVersion.PPOCRV4,
+            }
+        )
+        return eng
+
     @property
     def supported_types(self) -> list[str]:
         """Supported document types."""
-        return ["txt", "md"]
+        return ["txt", "md", "docx", "pdf", "pptx", "epub"]
 
     @correlated
     def setup(self) -> None:
@@ -131,6 +151,13 @@ class ONNXTextSearchProvider(SearchProvider):
     def tokenizer(self) -> PreTrainedTokenizerFast:
         """Tokenizer."""
         return AutoTokenizer.from_pretrained(self.tokenizer_path)
+
+    def _chunk(self, text: str) -> list[str]:
+        """Chunk text."""
+        step_size = self.max_chunk_size - self.overlap
+        text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), step_size)]
+        text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
+        return text_chunks
 
     def embed(self, text: list[str]) -> np.ndarray:
         """Embed text."""
@@ -173,27 +200,25 @@ class ONNXTextSearchProvider(SearchProvider):
                     return
                 if path.stat().st_size > self.max_filesize_mb * 1024 * 1024:
                     return
+                text = self.markitdown.convert(path).markdown
+                text_chunks = self._chunk(text)
 
-                # Try to read with UTF-8 first, then fallback to other encodings
-                text = None
-                encodings = ["utf-8", "utf-16", "latin-1", "cp1252"]
+                if path.suffix.strip(".") == "pdf":
+                    with fitz.open(path) as doc:
+                        for page in doc:
+                            for img in page.get_images(full=True):
+                                xref = img[0]
+                                base_image = doc.extract_image(xref)
+                                image_bytes = base_image["image"]
+                                texts = cast(
+                                    "tuple[str, ...] | None",
+                                    self.ocr_engine(image_bytes, use_det=False, use_cls=False, use_rec=True).txts,  # type: ignore
+                                )
+                                if texts is None or len(texts) == 0:
+                                    continue
+                                ocr_text = "\n".join(texts)
+                                text_chunks.extend(self._chunk(ocr_text))
 
-                for encoding in encodings:
-                    try:
-                        text = path.read_text(encoding=encoding)
-                        break
-                    except (UnicodeDecodeError, UnicodeError):
-                        continue
-
-                if text is None:
-                    # If all encodings fail, skip this file
-                    logging.warning(f"Could not decode file {path} with any supported encoding. Skipping file.")
-                    return
-
-                # Create overlapping chunks with 20% overlap
-                step_size = self.max_chunk_size - self.overlap
-                text_chunks = [text[i : i + self.max_chunk_size] for i in range(0, len(text), step_size)]
-                text_chunks = [chunk for chunk in text_chunks if len(chunk) >= self.min_chunk_size]
                 if len(text_chunks) == 0:
                     return
                 for chunk in text_chunks:
@@ -216,7 +241,5 @@ class ONNXTextSearchProvider(SearchProvider):
             for path, distance in self._index.query(query_embedding, self.k):
                 similarity = 1 - distance
                 results.append(SearchResult(value=path, confidence=similarity))
-        results.sort(key=lambda x: x.confidence, reverse=True)
-        results = list(unique_everseen(results, key=lambda x: x.value))
         self._idle.set()
         return results
