@@ -125,6 +125,11 @@ class DirectorySelector(ModalScreen[set[Path]]):
             self.path_index[root] = node
         for path in sorted(self.selected):
             self._reveal_path(path)
+
+        # If no initial paths are selected, unfold to current working directory
+        if not self.selected:
+            self._reveal_path(Path.cwd())
+
         self._refresh_labels(tree.root)
         tree.focus()
 

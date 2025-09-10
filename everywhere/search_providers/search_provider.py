@@ -7,7 +7,9 @@ from collections.abc import Iterable
 from pathlib import Path
 from queue import SimpleQueue
 
-from ..common.pydantic import FrozenBaseModel, SearchQuery, SearchResult
+from pydantic import BaseModel
+
+from ..common.pydantic import SearchQuery, SearchResult
 from ..events import add_callback, correlated, publish
 from ..events.app import UserSearched
 from ..events.search_provder import (
@@ -101,7 +103,7 @@ class _EventfulProvider:
         self._search_q.put(event.query)
 
 
-class SearchProvider(FrozenBaseModel, ABC):
+class SearchProvider(BaseModel, ABC):
     """Search provider."""
 
     @property

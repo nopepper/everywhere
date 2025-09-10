@@ -37,11 +37,16 @@ cd everywhere
 uv run everywhere
 ```
 
+**Additional commands:**
+
+- `everywhere --temp` will store all app data in a temporary directory and not persist across runs.
+- `everywhere --reset` will delete all stored app data and reset the app to default settings.
+
 ## Usage Notes
 
-- **When you first run the app, it will start indexing the dummy `data_test` directory.** You should pick out the directories you want to index (click the circle in the top left corner, then select "Pick indexed directories...").
+- You can pick out the directories you want to index (click the circle in the top left corner, then select "Pick indexed directories...").
 - Everywhere continuously monitors the filesystem for changes and updates the index accordingly.
-- Index data is stored in the `cache` directory of the project.
+- All configs and data are stored in `/home/{user}/.local/share/EverywhereApp` (Linux) and `%LOCALAPPDATA%\EverywhereApp` (Windows).
 - Due to [Voyager](https://github.com/spotify/voyager) limitations, ARM CPUs are not supported on Windows.
 
 ## Roadmap

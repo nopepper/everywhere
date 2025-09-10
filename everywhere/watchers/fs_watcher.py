@@ -6,11 +6,10 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from more_itertools import flatten
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..common.pydantic import FrozenBaseModel
 from ..events import publish
 from ..events.watcher import ChangeType, FileChanged
 
@@ -71,16 +70,15 @@ class _FSWatchdog:
         self.observer.join()
 
 
-class FSWatcher(FrozenBaseModel):
+class FSWatcher(BaseModel):
     """Basic filesystem watcher."""
 
-    fs_path: Path | list[Path] = Field(description="Path to watch for changes.")
+    fs_path: list[Path] = Field(default=[], description="Path to watch for changes.")
     supported_types: set[str] | None = Field(default=None, description="Supported file types.")
 
     def start(self):
         """Setup the filesystem watcher."""
-        fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
-        self._fs_watcher = _FSWatchdog(fs_paths)
+        self._fs_watcher = _FSWatchdog(self.fs_path)
         self._fs_watcher.start()
         self._running = True
         threading.Thread(target=self._walk_and_publish, daemon=True).start()
@@ -92,24 +90,22 @@ class FSWatcher(FrozenBaseModel):
 
     @field_validator("fs_path")
     @classmethod
-    def validate_fs_path(cls, fs_path: Path | list[Path]) -> Path | list[Path]:
+    def validate_fs_path(cls, fs_path: list[Path]) -> list[Path]:
         """Validate the filesystem paths."""
-        fs_paths = fs_path if isinstance(fs_path, list) else [fs_path]
-        fs_paths = list(set(fs_paths))
+        fs_path = list(set(fs_path))
 
-        for fs_path in fs_paths:
-            if not fs_path.is_dir():
-                raise ValueError(f"Path {fs_path} is not a directory.")
+        for p in fs_path:
+            if not p.is_dir():
+                raise ValueError(f"Path {p} is not a directory.")
 
         # Remove paths that are children of other paths in the list
-        filtered_paths = [p for p in fs_paths if not any(p != other and p.is_relative_to(other) for other in fs_paths)]
+        filtered_paths = [p for p in fs_path if not any(p != other and p.is_relative_to(other) for other in fs_path)]
 
         return filtered_paths
 
     def walk_all(self) -> Iterable[Path]:
         """Return all invalidated paths."""
-        fs_paths = self.fs_path if isinstance(self.fs_path, list) else [self.fs_path]
-        scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in fs_paths])
+        scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in self.fs_path])
         scanned_files = (p for p in scanned_files if os.access(p, os.R_OK))
 
         if self.supported_types is not None:

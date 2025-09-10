@@ -1,5 +1,7 @@
 """Application entry point."""
 
+import argparse
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -16,10 +18,11 @@ from textual.widgets import DataTable, Header, Input
 
 from everywhere.events.search_provder import GotSearchResult, IndexingFinished
 
+from ..common.app import app_dirs
 from ..events import add_callback, publish
 from ..events.app import UserSearched
-from ..search_providers.onnx_text_search import ONNXTextSearchProvider
 from ..watchers.fs_watcher import FSWatcher
+from .app_config import AppComponents
 from .collector import ResultsCollector
 from .directory_selector import DirectorySelector
 from .progress import ProgressTracker
@@ -168,26 +171,20 @@ class EverywhereApp(App):
 
     search_term = reactive("")
 
-    def __init__(self, fs_path: str = "data_test"):
+    def __init__(self, config_path: Path | None = None):
         """Initialize the Everything app.
 
         Args:
-            fs_path: Path to the directory to search in.
+            config_path: Path to the app configuration.
         """
         super().__init__()
-
-        search_providers = [
-            ONNXTextSearchProvider(
-                onnx_model_path=Path("models/all-MiniLM-L6-v2/onnx/model_quint8_avx2.onnx"),
-                tokenizer_path=Path("models/all-MiniLM-L6-v2"),
-            )
-        ]
-        self.search_providers = [provider.start_eventful() for provider in search_providers]
-        self.watcher = FSWatcher(
-            fs_path=Path(fs_path),
-            supported_types=set.union(*[provider.supported_types for provider in search_providers]),
-        )
-        self.watcher.start()
+        self.config_path = config_path or app_dirs.app_config_path
+        if not self.config_path.exists():
+            self.config = AppComponents()
+        else:
+            self.config = AppComponents.model_validate_json(self.config_path.read_text())
+        self.search_providers = [provider.start_eventful() for provider in self.config.search_providers]
+        self.config.fs_watcher.start()
         self._progress = ProgressTracker()
         self._results_collector = ResultsCollector()
 
@@ -198,7 +195,7 @@ class EverywhereApp(App):
         yield DataTable(id="results_table")
         yield StatusBar(progress=self._progress)
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         """Set up the app when mounted."""
         table = self.query_one("#results_table", DataTable)
         table.add_columns("", "Name", "Path", "Size", "Date Modified")
@@ -206,6 +203,11 @@ class EverywhereApp(App):
         self._update_table_timer = None
         add_callback(IndexingFinished, self.on_indexing_finished)
         add_callback(GotSearchResult, self.on_got_search_result)
+
+        # If no paths are configured, prompt the user to select some until they do
+        if len(self.config.fs_watcher.fs_path) == 0:
+            self.notify("Please select directories to index")
+            self.action_select_directories()
 
     def on_indexing_finished(self, event: IndexingFinished) -> None:
         """Handle indexing finished event."""
@@ -343,30 +345,63 @@ class EverywhereApp(App):
     @work
     async def action_select_directories(self) -> None:
         """Open the directory selection dialog."""
-        current_paths = self.watcher.fs_path
+        old_watcher = self.config.fs_watcher
+        current_paths = old_watcher.fs_path
         if isinstance(current_paths, Path):
             current_paths = [current_paths]
 
         worker = self.run_worker(self.push_screen_wait(DirectorySelector(initial_paths=current_paths)))
         selected = await worker.wait()  # returns the dismissal value
 
+        if not selected and len(self.config.fs_watcher.fs_path) == 0:
+            self.action_select_directories()
+            return
+
         if not selected:
             return
 
-        old_watcher_dump = self.watcher.model_dump()
+        old_watcher_dump = old_watcher.model_dump()
         old_watcher_dump["fs_path"] = list(selected)
-        self.watcher.stop()
-        del self.watcher
-        self.watcher = FSWatcher(**old_watcher_dump)
-        self.watcher.start()
+        old_watcher.stop()
+        new_watcher = FSWatcher(**old_watcher_dump)
+        self.config.fs_watcher = new_watcher
+        new_watcher.start()
+        self.save_config()
+
+    def save_config(self) -> None:
+        """Save the app configuration."""
+        Path(self.config_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.config_path).write_text(self.config.model_dump_json(indent=2))
 
     def action_close_app(self) -> None:
         """Close the application."""
         self.exit()
 
 
+def reset_all() -> None:
+    """Delete both config and cache directories."""
+    if app_dirs.app_data_dir.exists():
+        shutil.rmtree(app_dirs.app_data_dir)
+        print(f"App data directory deleted: {app_dirs.app_data_dir}")
+    else:
+        print(f"App data directory does not exist: {app_dirs.app_data_dir}")
+
+
 def main():
     """Main entry point."""
+    parser = argparse.ArgumentParser(description="Everywhere - File search application")
+    parser.add_argument("--temp", action="store_true", help="Run in temporary mode")
+    parser.add_argument("--reset", action="store_true", help="Delete all app data")
+
+    args = parser.parse_args()
+
+    if args.reset:
+        reset_all()
+        return
+
+    if args.temp:
+        app_dirs.use_temp_app_data_dir()
+
     app = EverywhereApp()
     app.run()
 

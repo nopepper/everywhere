@@ -17,6 +17,7 @@ from rapidocr import EngineType, LangDet, ModelType, OCRVersion, RapidOCR
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from ..common.ann import ANNIndex
+from ..common.app import app_dirs
 from ..common.pydantic import SearchQuery, SearchResult
 from .search_provider import SearchProvider
 
@@ -29,18 +30,57 @@ def _mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> n
     )
 
 
+def _get_default_local_dir() -> Path:
+    return app_dirs.app_models_dir / "sentence-transformers" / "all-MiniLM-L6-v2"
+
+
+DEFAULT_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
+DEFAULT_REQUIRED = [
+    "tokenizer.json",
+    "vocab.txt",
+    "config.json",
+    "modules.json",
+    "onnx/model_quint8_avx2.onnx",
+]
+
+
+def _download_default_models() -> bool:
+    from huggingface_hub import snapshot_download
+
+    local_dir = _get_default_local_dir()
+    before = all((local_dir / f).exists() for f in DEFAULT_REQUIRED)
+
+    snapshot_download(
+        repo_id=DEFAULT_REPO_ID,
+        local_dir=local_dir,
+        local_dir_use_symlinks=False,
+        allow_patterns=DEFAULT_REQUIRED,
+        resume_download=True,
+        revision="c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+    )
+    after = all((local_dir / f).exists() for f in DEFAULT_REQUIRED)
+    return (not before) and after
+
+
 class ONNXTextSearchProvider(SearchProvider):
     """ONNX Text Embedder."""
 
-    onnx_model_path: Path = Field(description="Path to the ONNX model.")
-    tokenizer_path: Path = Field(description="Path to the tokenizer.")
+    onnx_model_path: Path = Field(
+        default_factory=lambda: _get_default_local_dir() / "onnx" / "model_quint8_avx2.onnx",
+        description="Path to the ONNX model.",
+    )
+    tokenizer_path: Path = Field(default_factory=_get_default_local_dir, description="Path to the tokenizer.")
+    ocr_enabled: bool = Field(default=False, description="Whether to enable OCR.")
 
     k: int = Field(default=1000, description="Number of results to return.")
     min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")
     max_chunk_size: int = Field(default=1024, description="Maximum chunk size for the text.")
     overlap: int = Field(default=128, description="Overlap for the text chunks.")
     max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
-    ann_cache_dir: Path = Field(default=Path("cache/text_ann"), description="Path to the ANN cache directory.")
+    ann_cache_dir: Path = Field(
+        default_factory=lambda: app_dirs.app_cache_dir / "text_ann", description="Path to the ANN cache directory."
+    )
 
     @cached_property
     def markitdown(self) -> MarkItDown:
@@ -68,11 +108,13 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def setup(self) -> None:
         """Setup the provider."""
+        self._idle = threading.Event()
+        if self.tokenizer_path == _get_default_local_dir():
+            _download_default_models()
         assert self.session is not None
         assert self.tokenizer is not None
         test_emb = self.embed(["test"])
         self._index = ANNIndex(dims=test_emb.shape[-1], cache_dir=self.ann_cache_dir).start_eventful()
-        self._idle = threading.Event()
         self._idle.set()
 
     def teardown(self) -> None:
@@ -162,7 +204,7 @@ class ONNXTextSearchProvider(SearchProvider):
             # TODO log error
             return False
 
-        if extension == "pdf":
+        if extension == "pdf" and self.ocr_enabled:
             try:
                 with fitz.open(path) as doc:
                     for page in doc:
@@ -194,8 +236,9 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
-        results: list[SearchResult] = []
+        self._idle.wait()
         self._idle.clear()
+        results: list[SearchResult] = []
         query_embedding = self.embed([query.text])[0]
         # Normalize query to align with normalized corpus vectors
         query_embedding = query_embedding / np.linalg.norm(query_embedding)
