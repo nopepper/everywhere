@@ -6,7 +6,7 @@
 
 AI has gotten pretty good at understanding text. That's great. Agents and RAG pipelines are bulky, slow and complex. That's not so great. **Everywhere** is a simple terminal app that uses fast, on-device methods to index and let you search your entire filesystem in real time.
 
-The project takes inspiration from [Everything](https://www.voidtools.com/support/everything/), the ultra-efficient filename search engine for Windows. While not quite as _blazingly fast_, Everywhere should be lightweight, effective and self-explanatory.
+The project takes inspiration from [Everything](https://www.voidtools.com/support/everything/), the ultra-efficient filename search engine for Windows. While not quite as _blazingly fast_, Everywhere strives to be lightweight, effective and self-explanatory to use.
 
 ## Disclaimer
 
@@ -40,7 +40,7 @@ uv run everywhere
 ## Usage Notes
 
 - **When you first run the app, it will start indexing the dummy `data_test` directory.** You should pick out the directories you want to index (click the circle in the top left corner, then select "Pick indexed directories...").
-- Everything continuously monitors the filesystem for changes and updates the index accordingly.
+- Everywhere continuously monitors the filesystem for changes and updates the index accordingly.
 - Index data is stored in the `cache` directory of the project.
 - Due to [Voyager](https://github.com/spotify/voyager) limitations, ARM CPUs are not supported on Windows.
 
