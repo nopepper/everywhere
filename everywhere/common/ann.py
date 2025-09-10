@@ -1,6 +1,7 @@
 """ANN index helper."""
 
 import json
+import math
 import shutil
 import tempfile
 import threading
@@ -29,7 +30,7 @@ class ANNIndex:
 
     def __init__(self, dims: int, cache_dir: str | Path | None = None):
         """Initialize the index helper, optionally loading from a cache directory."""
-        self._index = Index(Space.InnerProduct, num_dimensions=dims, storage_data_type=StorageDataType.E4M3)
+        self._index = Index(Space.InnerProduct, num_dimensions=dims, storage_data_type=StorageDataType.E4M3, M=24)
         self._paths_by_id: dict[int, IndexedPath] = {}
         self._ids_by_path: dict[str, list[int]] = defaultdict(list)
         self.cache_dir = Path(cache_dir) if cache_dir else None
@@ -130,7 +131,12 @@ class ANNIndex:
         """Query the index."""
         if self._index.num_elements == 0:
             return []
-        ids, distances = self._index.query(embedding, k=min(k, self._index.num_elements))
+        k = min(k, self._index.num_elements)
+        try:
+            ids, distances = self._index.query(embedding, k=k)
+        except Exception:
+            # In some edge cases, we can't get the exact number of elements in the index
+            ids, distances = self._index.query(embedding, k=math.ceil(k * 0.8))
         results: list[tuple[Path, float]] = []
         for path_id, distance in zip(ids, distances, strict=True):
             path_info = self._paths_by_id.get(path_id)

@@ -3,10 +3,26 @@
 import threading
 from itertools import groupby
 
+import numpy as np
+
 from ..common.pydantic import SearchResult
 from ..events import add_callback
 from ..events.app import UserSearched
 from ..events.search_provder import GotSearchResult
+
+NORMALIZE_CONFIDENCE = True
+
+
+def normalize_scores(scores: list[float]) -> list[float]:
+    """Normalize scores."""
+    if not scores:
+        return []
+
+    scores_np = np.array(scores)
+    mu = scores_np.mean()
+    normalized = (scores_np - mu) / (scores_np.max() - mu + 1e-8)
+    normalized = np.clip(normalized, 0, 1)
+    return normalized.tolist()
 
 
 class ResultsCollector:
@@ -55,7 +71,11 @@ class ResultsCollector:
             results = [e.result for e in self._current_results]
         results_agg: list[SearchResult] = []
         for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
-            results_agg.append(max(group, key=lambda x: x.confidence))
+            group = list(group)
+            group_confidence = sum(x.confidence for x in group) / len(group)
+            results_agg.append(SearchResult(value=group[0].value, confidence=group_confidence))
 
+        new_scores = normalize_scores([x.confidence for x in results_agg])
+        results_agg = [SearchResult(value=x.value, confidence=new_scores[i]) for i, x in enumerate(results_agg)]
         results_agg.sort(key=lambda x: x.confidence, reverse=True)
         return query, results_agg

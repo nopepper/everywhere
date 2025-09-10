@@ -1,8 +1,10 @@
 """ONNX-based text search provider."""
 
+import math
 import os
 import threading
 from functools import cached_property
+from itertools import groupby
 from pathlib import Path
 from typing import cast
 
@@ -35,7 +37,7 @@ class ONNXTextSearchProvider(SearchProvider):
 
     k: int = Field(default=1000, description="Number of results to return.")
     min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")
-    max_chunk_size: int = Field(default=2048, description="Maximum chunk size for the text.")
+    max_chunk_size: int = Field(default=1024, description="Maximum chunk size for the text.")
     overlap: int = Field(default=128, description="Overlap for the text chunks.")
     max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
     ann_cache_dir: Path = Field(default=Path("cache/text_ann"), description="Path to the ANN cache directory.")
@@ -172,7 +174,7 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
-        results = []
+        results: list[SearchResult] = []
         self._idle.clear()
         query_embedding = self.embed([query.text])[0]
         # Normalize query to align with normalized corpus vectors
@@ -180,5 +182,12 @@ class ONNXTextSearchProvider(SearchProvider):
         for path, distance in self._index.query(query_embedding, self.k):
             similarity = 1 - distance
             results.append(SearchResult(value=path, confidence=similarity))
+        results_filtered: list[SearchResult] = []
+        for path, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
+            max_chunk_score = max(x.confidence for x in group)
+            num_chunks = len(self._index._index_helper._ids_by_path[path.as_posix()])
+            doc_score = max_chunk_score / math.log(1 + num_chunks)
+            results_filtered.append(SearchResult(value=path, confidence=doc_score))
+
         self._idle.set()
-        return results
+        return results_filtered

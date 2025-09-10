@@ -57,7 +57,7 @@ def format_date(timestamp_ns: int) -> str:
 
 def confidence_to_color(confidence: float) -> Text:
     """Convert confidence (0-1) into a gray→green gradient cell."""
-    confidence = max(0.0, min(1.0, confidence))
+    confidence = max(0.0, min(1.0, confidence**2))
 
     # Start at light gray (#d0d0d0) → End at bright green (#00ff00)
     start_r, start_g, start_b = 208, 208, 208
@@ -114,6 +114,7 @@ class DirectoryIndexCommand(Provider):
 class EverywhereApp(App):
     """File search application."""
 
+    TITLE = "Everywhere"
     COMMANDS: ClassVar = {DirectoryIndexCommand}
     BINDINGS: ClassVar = [
         Binding("ctrl+c", "close_app", "Close application", priority=True),
@@ -241,7 +242,7 @@ class EverywhereApp(App):
         free = max(0, total - fixed)
 
         # 1:3 split
-        name_w = max(1, free // 4)
+        name_w = max(25, free // 4)
         path_w = max(1, free - name_w)
 
         widths = [CONF, name_w, path_w, SIZE, DATE]
