@@ -14,7 +14,7 @@ from charset_normalizer import from_path
 from markitdown import MarkItDown, StreamInfo
 from pydantic import Field
 from rapidocr import EngineType, LangDet, ModelType, OCRVersion, RapidOCR
-from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from tokenizers import Tokenizer
 
 from ..common.ann import ANNIndex
 from ..common.app import app_dirs
@@ -132,9 +132,37 @@ class ONNXTextSearchProvider(SearchProvider):
         return ort.InferenceSession(self.onnx_model_path, sess_options=options, providers=["CPUExecutionProvider"])
 
     @cached_property
-    def tokenizer(self) -> PreTrainedTokenizerFast:
+    def tokenizer(self) -> Tokenizer:
         """Tokenizer."""
-        return AutoTokenizer.from_pretrained(self.tokenizer_path)
+        tok = Tokenizer.from_file((self.tokenizer_path / "tokenizer.json").as_posix())
+        max_len = 512
+        tok.enable_truncation(max_length=max_len)
+        # Pick a pad token/id that exists in the vocab (common aliases)
+        for pad_tok in ("[PAD]", "<pad>", "<|pad|>", "</s>"):
+            pad_id = tok.token_to_id(pad_tok)
+            if pad_id is not None:
+                tok.enable_padding(length=max_len, pad_id=pad_id, pad_token=pad_tok)
+                break
+        else:
+            # Fallback: pad_id=0 (not ideal, but safe)
+            tok.enable_padding(length=max_len, pad_id=0, pad_token="[PAD]")
+        return tok
+
+    def _encode(self, text: str | list[str]) -> dict[str, np.ndarray]:
+        """Encode text."""
+        batch_text = [text] if isinstance(text, str) else text
+        encs = self.tokenizer.encode_batch(batch_text)
+
+        input_ids = np.array([e.ids for e in encs], dtype=np.int64)
+        attention_mask = np.array([e.attention_mask for e in encs], dtype=np.int64)
+
+        return cast(
+            "dict[str, np.ndarray]",
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+            },
+        )
 
     def _chunk(self, text: str) -> list[str]:
         """Chunk text."""
@@ -145,18 +173,7 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def embed(self, text: list[str]) -> np.ndarray:
         """Embed text."""
-        # Fixed-length padding helps performance in ORT by producing uniform shapes
-        max_len = min(getattr(self.tokenizer, "model_max_length", 512) or 512, 512)
-        batch = cast(
-            "dict[str, np.ndarray]",
-            self.tokenizer(
-                text,
-                padding="max_length",
-                truncation=True,
-                max_length=max_len,
-                return_tensors="np",
-            ),
-        )
+        batch = self._encode(text)
         embs = self.session.run(
             None,
             {

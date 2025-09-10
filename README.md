@@ -16,13 +16,13 @@ The project takes inspiration from [Everything](https://www.voidtools.com/suppor
 
 Make sure [uv](https://docs.astral.sh/uv/getting-started/installation/) is installed on your system.
 
-Try out the app without installing:
+Try out the app without installing or persistent storage:
 
 ```bash
-uvx --python 3.11 --from git+https://github.com/nopepper/everywhere.git everywhere
+uvx --python 3.11 --from git+https://github.com/nopepper/everywhere.git everywhere --temp
 ```
 
-Installing and running:
+To install and run regularly:
 
 ```bash
 uv tool install --python 3.11 git+https://github.com/nopepper/everywhere.git
