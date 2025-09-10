@@ -212,35 +212,40 @@ class _EventfulANNIndex:
 
     def __init__(self, index_helper: ANNIndex):
         self._index_helper = index_helper
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._timer: threading.Timer | None = None
 
     def __contains__(self, path: Path) -> bool:
         """Check if a path is in the index."""
-        return self._index_helper.__contains__(path)
+        with self._lock:
+            return self._index_helper.__contains__(path)
 
     def query(self, embedding: np.ndarray, k: int) -> list[tuple[Path, float]]:
         """Query the index."""
-        return self._index_helper.query(embedding, k)
+        with self._lock:
+            return self._index_helper.query(embedding, k)
 
     def add(self, path: Path, embedding: np.ndarray) -> None:
         """Add an embedding and trigger a debounced save."""
-        self._index_helper.add(path, embedding)
-        self._trigger_save()
+        with self._lock:
+            self._index_helper.add(path, embedding)
+            self._trigger_save()
 
     def remove(self, path: Path) -> bool:
         """Remove a path and trigger a debounced save if successful."""
-        removed = self._index_helper.remove(path)
-        if removed:
-            self._trigger_save()
-        return removed
+        with self._lock:
+            removed = self._index_helper.remove(path)
+            if removed:
+                self._trigger_save()
+            return removed
 
     def clean(self) -> int:
         """Clean the index and trigger a debounced save."""
-        removed = self._index_helper.clean()
-        if removed > 0:
-            self._trigger_save()
-        return removed
+        with self._lock:
+            removed = self._index_helper.clean()
+            if removed > 0:
+                self._trigger_save()
+            return removed
 
     def _trigger_save(self) -> None:
         with self._lock:
