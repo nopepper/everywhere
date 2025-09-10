@@ -14,18 +14,18 @@ The project takes inspiration from [Everything](https://www.voidtools.com/suppor
 
 ## Getting Started
 
-Make sure [uv](https://github.com/astral-sh/uv) is installed on your system.
+Make sure [uv](https://docs.astral.sh/uv/getting-started/installation/) is installed on your system.
 
 Try out the app without installing:
 
 ```bash
-uvx --from git+https://github.com/nopepper/everywhere.git everywhere
+uvx --python 3.11 --from git+https://github.com/nopepper/everywhere.git everywhere
 ```
 
 Installing and running:
 
 ```bash
-uv tool install git+https://github.com/nopepper/everywhere.git
+uv tool install --python 3.11 git+https://github.com/nopepper/everywhere.git
 uvx everywhere
 ```
 
@@ -39,9 +39,10 @@ uv run everywhere
 
 ## Usage Notes
 
-- When you first run the app, it will start indexing the `data_test` directory in your current working directory. You can change the directories to be indexed from the command palette (click the circle in the top left corner, then select "Pick indexed directories...").
+- **When you first run the app, it will start indexing the dummy `data_test` directory.** You should pick out the directories you want to index (click the circle in the top left corner, then select "Pick indexed directories...").
 - Everything continuously monitors the filesystem for changes and updates the index accordingly.
 - Index data is stored in the `cache` directory of the project.
+- Due to [Voyager](https://github.com/spotify/voyager) limitations, ARM CPUs are not supported on Windows.
 
 ## Roadmap
 
@@ -89,6 +90,7 @@ uv run everywhere
   - [ ] Faster filesystem parsing
   - [ ] Remote search providers (GDrive, Notion)
   - [ ] Image search providers
+  - [ ] Standalone installer
 
 ## Contributing
 
