@@ -30,6 +30,7 @@ class ANNIndex:
 
     def __init__(self, dims: int, cache_dir: str | Path | None = None):
         """Initialize the index helper, optionally loading from a cache directory."""
+        self._dims = dims
         self._index = Index(Space.InnerProduct, num_dimensions=dims, storage_data_type=StorageDataType.E4M3, M=24)
         self._paths_by_id: dict[int, IndexedPath] = {}
         self._ids_by_path: dict[str, list[int]] = defaultdict(list)
@@ -63,11 +64,19 @@ class ANNIndex:
         if not index_path.exists() or not paths_path.exists():
             return
 
-        self._index = Index.load(str(index_path))
-        with open(paths_path) as f:
-            paths_data = json.load(f)
-            self._paths_by_id = {int(k): v for k, v in paths_data["paths_by_id"].items()}
-            self._ids_by_path = defaultdict(list, paths_data["ids_by_path"])
+        try:
+            self._index = Index.load(str(index_path))
+            with open(paths_path) as f:
+                paths_data = json.load(f)
+                self._paths_by_id = {int(k): v for k, v in paths_data["paths_by_id"].items()}
+                self._ids_by_path = defaultdict(list, paths_data["ids_by_path"])
+        except Exception:
+            # TODO log error
+            self._index = Index(
+                Space.InnerProduct, num_dimensions=self._dims, storage_data_type=StorageDataType.E4M3, M=24
+            )
+            self._paths_by_id = {}
+            self._ids_by_path = defaultdict(list)
 
     def save(self, destination_dir: str | Path | None = None) -> None:
         """Save the index and tracked paths atomically.
