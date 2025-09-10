@@ -358,6 +358,7 @@ class EverywhereApp(App):
         self.watcher.stop()
         del self.watcher
         self.watcher = FSWatcher(**old_watcher_dump)
+        self.watcher.start()
 
     def action_close_app(self) -> None:
         """Close the application."""

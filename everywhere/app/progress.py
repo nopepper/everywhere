@@ -21,10 +21,11 @@ class ProgressTracker:
         add_callback(IndexSaveFinished, self.on_index_save_finished)
 
     def reset(self) -> None:
-        """Reset the progress tracker."""
+        """Reset the progress tracker only when all tasks are finished."""
         with self._lock:
-            self._total_tasks = 0
-            self._finished_tasks = 0
+            if self._finished_tasks >= self._total_tasks:
+                self._total_tasks = 0
+                self._finished_tasks = 0
 
     def on_index_save_started(self, event: IndexSaveStarted) -> None:
         """Handle index save started event."""
@@ -46,12 +47,18 @@ class ProgressTracker:
         with self._lock:
             self._finished_tasks += 1
 
+    def get_progress(self) -> tuple[int, int]:
+        """Get current progress state (total, finished) atomically."""
+        with self._lock:
+            return self._total_tasks, self._finished_tasks
+
     @property
     def status_text(self) -> str:
         """Status text."""
-        if self.total_tasks - self.finished_tasks == 0:
+        total, finished = self.get_progress()
+        if total - finished <= 0:
             return "Ready"
-        return f"Indexing {self.finished_tasks}/{self.total_tasks}"
+        return f"Indexing {finished}/{total}"
 
     @property
     def total_tasks(self) -> int:
@@ -66,4 +73,5 @@ class ProgressTracker:
     @property
     def ready(self) -> bool:
         """Ready."""
-        return self.total_tasks - self.finished_tasks <= 0
+        total, finished = self.get_progress()
+        return total - finished <= 0

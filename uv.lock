@@ -416,6 +416,7 @@ name = "everywhere"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "charset-normalizer" },
     { name = "markitdown", extra = ["docx", "pdf", "pptx"] },
     { name = "more-itertools" },
     { name = "numpy" },
@@ -443,6 +444,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "charset-normalizer", specifier = ">=3.4.3" },
     { name = "markitdown", extras = ["pdf", "docx", "pptx"], specifier = ">=0.1.2" },
     { name = "more-itertools", specifier = ">=10.8.0" },
     { name = "numpy", specifier = ">=2.3.2" },

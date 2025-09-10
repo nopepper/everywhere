@@ -10,7 +10,8 @@ from typing import cast
 import fitz
 import numpy as np
 import onnxruntime as ort
-from markitdown import MarkItDown
+from charset_normalizer import from_path
+from markitdown import MarkItDown, StreamInfo
 from pydantic import Field
 from rapidocr import EngineType, LangDet, ModelType, OCRVersion, RapidOCR
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
@@ -129,7 +130,9 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def update(self, path: Path) -> bool:
         """Handle a change event."""
-        if path.suffix.strip(".") not in self.supported_types:
+        extension = path.suffix.strip(".")
+
+        if extension not in self.supported_types:
             return False
 
         if not path.exists():
@@ -141,24 +144,43 @@ class ONNXTextSearchProvider(SearchProvider):
         if path in self._index:
             return False
 
-        text = self.markitdown.convert(path).markdown
-        text_chunks = self._chunk(text)
+        stream_info = None
+        if extension in ["txt", "md"]:
+            best_guess = from_path(path).best()
+            if best_guess is not None:
+                stream_info = StreamInfo(
+                    charset=best_guess.encoding,
+                )
 
-        if path.suffix.strip(".") == "pdf":
-            with fitz.open(path) as doc:
-                for page in doc:
-                    for img in page.get_images(full=True):
-                        xref = img[0]
-                        base_image = doc.extract_image(xref)
-                        image_bytes = base_image["image"]
-                        texts = cast(
-                            "tuple[str, ...] | None",
-                            self.ocr_engine(image_bytes).txts,  # type: ignore
-                        )
-                        if texts is None or len(texts) == 0:
-                            continue
-                        ocr_text = "\n".join(texts)
-                        text_chunks.extend(self._chunk(ocr_text))
+        try:
+            text = self.markitdown.convert(
+                path,
+                stream_info=stream_info,
+            ).markdown
+            text_chunks = self._chunk(text)
+        except Exception:
+            # TODO log error
+            return False
+
+        if extension == "pdf":
+            try:
+                with fitz.open(path) as doc:
+                    for page in doc:
+                        for img in page.get_images(full=True):
+                            xref = img[0]
+                            base_image = doc.extract_image(xref)
+                            image_bytes = base_image["image"]
+                            texts = cast(
+                                "tuple[str, ...] | None",
+                                self.ocr_engine(image_bytes).txts,  # type: ignore
+                            )
+                            if texts is None or len(texts) == 0:
+                                continue
+                            ocr_text = "\n".join(texts)
+                            text_chunks.extend(self._chunk(ocr_text))
+            except Exception:
+                # TODO log error
+                pass
 
         if len(text_chunks) == 0:
             return False

@@ -18,6 +18,7 @@ dependencies = [
     "markitdown[pdf,docx,pptx]>=0.1.2",
     "rapidocr>=3.4.0",
     "pymupdf>=1.26.4",
+    "charset-normalizer>=3.4.3",
 ]
 
 [project.scripts]

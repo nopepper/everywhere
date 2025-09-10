@@ -236,7 +236,7 @@ class _EventfulANNIndex:
     def _trigger_save(self) -> None:
         with self._lock:
             if self._timer:
-                self._timer.cancel()
+                return
             self._timer = threading.Timer(self._GRACE_PERIOD_SECONDS, self._save_to_cache)
             self._timer.daemon = True
             self._timer.start()

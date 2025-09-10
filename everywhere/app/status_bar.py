@@ -47,8 +47,7 @@ class StatusBar(Horizontal):
         self._spacer.display = True
 
     def _refresh(self) -> None:
-        total = self._progress_tracker.total_tasks
-        finished = self._progress_tracker.finished_tasks
+        total, finished = self._progress_tracker.get_progress()
         remaining = max(0, total - finished)
 
         self._status_text.update(self._progress_tracker.status_text)
