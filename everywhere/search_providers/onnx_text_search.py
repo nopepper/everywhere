@@ -13,8 +13,8 @@ from markitdown import MarkItDown
 from pydantic import Field
 from rapidocr import EngineType, LangDet, ModelType, OCRVersion, RapidOCR
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
-from voyager import Index, Space, StorageDataType
 
+from ..common.ann import ANNIndex
 from ..common.pydantic import SearchQuery, SearchResult
 from .search_provider import SearchProvider
 
@@ -25,57 +25,6 @@ def _mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> n
     return np.sum(token_embeddings * input_mask_expanded, axis=1) / np.clip(
         np.sum(input_mask_expanded, axis=1), a_min=1e-9, a_max=None
     )
-
-
-class IndexHelper:
-    """Index helper."""
-
-    def __init__(self, dims: int):
-        """Initialize the index helper."""
-        self._index = Index(Space.InnerProduct, num_dimensions=dims, storage_data_type=StorageDataType.E4M3)
-        self._tracked_paths = []
-
-    def add(self, path: Path, embedding: np.ndarray) -> None:
-        """Add an embedding to the index."""
-        if len(embedding.shape) == 1:
-            new_id = self._index.add_item(embedding)
-            self._tracked_paths.append(
-                {
-                    "path": path,
-                    "id": new_id,
-                }
-            )
-        else:
-            assert len(embedding.shape) == 2
-            new_ids = self._index.add_items(embedding)
-            for new_id in new_ids:
-                self._tracked_paths.append(
-                    {
-                        "path": path,
-                        "id": new_id,
-                    }
-                )
-        return new_id
-
-    def remove(self, path: Path) -> bool:
-        """Remove an embedding from the index."""
-        for row in self._tracked_paths:
-            if row["path"] == path:
-                self._index.mark_deleted(row["id"])
-                self._tracked_paths.remove(row)
-                return True
-        return False
-
-    def query(self, embedding: np.ndarray, k: int) -> list[tuple[Path, float]]:
-        """Query the index."""
-        ids, distances = self._index.query(embedding, k=min(k, self._index.num_elements))
-        assert len(ids.shape) == len(distances.shape) == 1
-        results = []
-        for path_id, distance in zip(ids, distances, strict=True):
-            path = next((row["path"] for row in self._tracked_paths if row["id"] == path_id), None)
-            if path is not None:
-                results.append((path, distance))
-        return results
 
 
 class ONNXTextSearchProvider(SearchProvider):
@@ -89,6 +38,7 @@ class ONNXTextSearchProvider(SearchProvider):
     max_chunk_size: int = Field(default=2048, description="Maximum chunk size for the text.")
     overlap: int = Field(default=128, description="Overlap for the text chunks.")
     max_filesize_mb: float = Field(default=10, description="Maximum file size to index in MB.")
+    ann_cache_dir: Path = Field(default=Path("cache/text_ann"), description="Path to the ANN cache directory.")
 
     @cached_property
     def markitdown(self) -> MarkItDown:
@@ -119,8 +69,7 @@ class ONNXTextSearchProvider(SearchProvider):
         assert self.session is not None
         assert self.tokenizer is not None
         test_emb = self.embed(["test"])
-        self._index = IndexHelper(test_emb.shape[-1])
-        self._index_lock = threading.Lock()
+        self._index = ANNIndex(dims=test_emb.shape[-1], cache_dir=self.ann_cache_dir).start_eventful()
         self._idle = threading.Event()
         self._idle.set()
 
@@ -186,9 +135,11 @@ class ONNXTextSearchProvider(SearchProvider):
             return False
 
         if not path.exists():
-            with self._index_lock:
-                self._index.remove(path)
+            self._index.remove(path)
             return True
+
+        if path in self._index:
+            return False
 
         text = self.markitdown.convert(path).markdown
         text_chunks = self._chunk(text)
@@ -226,9 +177,8 @@ class ONNXTextSearchProvider(SearchProvider):
         query_embedding = self.embed([query.text])[0]
         # Normalize query to align with normalized corpus vectors
         query_embedding = query_embedding / np.linalg.norm(query_embedding)
-        with self._index_lock:
-            for path, distance in self._index.query(query_embedding, self.k):
-                similarity = 1 - distance
-                results.append(SearchResult(value=path, confidence=similarity))
+        for path, distance in self._index.query(query_embedding, self.k):
+            similarity = 1 - distance
+            results.append(SearchResult(value=path, confidence=similarity))
         self._idle.set()
         return results

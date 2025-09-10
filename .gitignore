@@ -1,6 +1,7 @@
 # data / models
 data/
 models/
+cache/
 
 # Python-generated files
 __pycache__/

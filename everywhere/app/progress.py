@@ -1,6 +1,9 @@
 """Progress tracker."""
 
+import threading
+
 from ..events import add_callback
+from ..events.ann import IndexSaveFinished, IndexSaveStarted
 from ..events.search_provder import GotIndexingRequest, IndexingFinished
 
 
@@ -11,13 +14,24 @@ class ProgressTracker:
         """Initialize the progress tracker."""
         self._total_tasks = 0
         self._finished_tasks = 0
+        self._lock = threading.Lock()
         add_callback(GotIndexingRequest, self.on_indexing_request)
         add_callback(IndexingFinished, self.on_indexing_finished)
+        add_callback(IndexSaveStarted, self.on_index_save_started)
+        add_callback(IndexSaveFinished, self.on_index_save_finished)
 
     def reset(self) -> None:
         """Reset the progress tracker."""
         self._total_tasks = 0
         self._finished_tasks = 0
+
+    def on_index_save_started(self, event: IndexSaveStarted) -> None:
+        """Handle index save started event."""
+        self._total_tasks += 1
+
+    def on_index_save_finished(self, event: IndexSaveFinished) -> None:
+        """Handle index save finished event."""
+        self._finished_tasks += 1
 
     def on_indexing_request(self, event: GotIndexingRequest) -> None:
         """Handle indexing started event."""
