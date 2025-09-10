@@ -1,14 +1,12 @@
-# Everywhere - Local, painless semantic search
-
-Search is good. Search could be better. Let's make it better.
+# Everywhere - Fast & local semantic search
 
 ![Demo GIF](./docs/demo.gif)
 
 ## Why this exists
 
-Document understanding has come a long way, thanks to modern AI. With it, we got a swarm of toolkits, frameworks and APIs that want to do them all, but few have dared to do as little as possible.
+AI has gotten pretty good at understanding text. That's great. Agents and RAG pipelines are bulky, slow and complex. That's not so great. **Everywhere** is a simple terminal app that uses fast, on-device methods to index and let you search your entire filesystem in real time.
 
-The project was inspired by [Everything](https://www.voidtools.com/support/everything/), a filename search engine for Windows that is outstanding in its ability to index and let you search your entire filesystem in real time, all while being trivial to set up and use. **Everywhere**'s goal is enable system-wide semantic search while staying true to those same principles.
+The project takes inspiration from [Everything](https://www.voidtools.com/support/everything/), the ultra-efficient filename search engine for Windows. While not quite as _blazingly fast_, Everywhere should be lightweight, effective and self-explanatory.
 
 ## Disclaimer
 
@@ -31,7 +29,7 @@ uv tool install git+https://github.com/nopepper/everywhere.git
 uvx everywhere
 ```
 
-Alternatively, you can clone the repository and run it from the source:
+Alternatively, you can clone the repository and run it from source:
 
 ```bash
 git clone https://github.com/nopepper/everywhere.git
@@ -39,14 +37,16 @@ cd everywhere
 uv run everywhere
 ```
 
-## Usage
+## Usage Notes
 
-When you first run the app, it will start indexing the `data_test` directory in your current working directory. You can change the directories to be indexed from the command palette (Ctrl+P, then select "Pick indexed directories...").
+- When you first run the app, it will start indexing the `data_test` directory in your current working directory. You can change the directories to be indexed from the command palette (click the circle in the top left corner, then select "Pick indexed directories...").
+- Everything continuously monitors the filesystem for changes and updates the index accordingly.
+- Index data is stored in the `cache` directory of the project.
 
 ## Roadmap
 
 - [ ] Add more search providers
-  - [ ] Fuzzy string search
+  - [ ] Full-text indexing
   - [x] PDF search (text only)
   - [x] PDF search (OCR)
   - [x] Word document search (text only)
@@ -78,9 +78,9 @@ When you first run the app, it will start indexing the `data_test` directory in 
   - [x] Add logging & events
 - [ ] Documentation & OSS
   - [x] License
-  - [ ] Readme
-    - [ ] Installation
-    - [ ] Usage
+  - [x] Readme
+    - [x] Installation
+    - [x] Usage
     - [x] Roadmap
     - [x] License
   - [ ] Update docs
