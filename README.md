@@ -61,19 +61,12 @@ uv run everywhere
   - [x] Indexing progress bar
   - [x] Limit search results to 1000 items
   - [x] Aggregate search results from multiple search providers
-  - [ ] Soft operators
-    - [ ] Add OR operator !or (additive)
-    - [ ] Add AND operator !and (multiplicative)
-    - [ ] Add NOT operator !not (inverse)
-  - [x] FS watcher checkbox selector
-    - [x] Let user choose which directories to watch
+  - [x] Directory selector & watcher
   - [ ] Search provider settings
-    - [ ] For each search provider, show checkboxes for each document type it supports
 - [ ] Improve quality
   - [x] Normalize embeddings
-  - [x] Add small overlap when chunking
-  - [x] Chunks at 256 tokens, unless the document is very small
-  - [ ] Nested RAG (successive halving)
+  - [x] Chunking upgrades
+  - [ ] Optional reranking
 - [ ] Improve reliability
   - [ ] Add tests
   - [x] Add logging & events
@@ -91,6 +84,10 @@ uv run everywhere
   - [ ] Remote search providers (GDrive, Notion)
   - [ ] Image search providers
   - [ ] Standalone installer
+  - [ ] Soft operators
+    - [ ] OR operator !or (additive)
+    - [ ] AND operator !and (multiplicative)
+    - [ ] Closures with `((` and `))`
 
 ## Contributing
 
