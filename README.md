@@ -26,16 +26,10 @@ Installing and running:
 
 ```bash
 uv tool install --python 3.11 git+https://github.com/nopepper/everywhere.git
-uvx everywhere
+everywhere
 ```
 
-Alternatively, you can clone the repository and run it from source:
-
-```bash
-git clone https://github.com/nopepper/everywhere.git
-cd everywhere
-uv run everywhere
-```
+**Hint:** Run `uv tool upgrade everywhere` every now and then to get the latest version.
 
 **Additional commands:**
 
@@ -48,6 +42,16 @@ uv run everywhere
 - Everywhere continuously monitors the filesystem for changes and updates the index accordingly.
 - All configs and data are stored in `/home/{user}/.local/share/EverywhereApp` (Linux) and `%LOCALAPPDATA%\EverywhereApp` (Windows).
 - Due to [Voyager](https://github.com/spotify/voyager) limitations, ARM CPUs are not supported on Windows.
+
+## Development
+
+You can clone the repository and run the app from source:
+
+```bash
+git clone https://github.com/nopepper/everywhere.git
+cd everywhere
+uv run everywhere
+```
 
 ## Roadmap
 
