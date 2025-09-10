@@ -10,10 +10,11 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
+from textual.coordinate import Coordinate
 from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Input
 
-from everywhere.events.search_provder import IndexingFinished
+from everywhere.events.search_provder import GotSearchResult, IndexingFinished
 
 from ..events import add_callback, publish
 from ..events.app import UserSearched
@@ -201,12 +202,17 @@ class EverywhereApp(App):
         table = self.query_one("#results_table", DataTable)
         table.add_columns("", "Name", "Path", "Size", "Date Modified")
         table.cursor_type = "cell"
-        self._update_results_timer = self.set_interval(0.1, self._update_results_table)
+        self._update_table_timer = None
         add_callback(IndexingFinished, self.on_indexing_finished)
+        add_callback(GotSearchResult, self.on_got_search_result)
 
     def on_indexing_finished(self, event: IndexingFinished) -> None:
         """Handle indexing finished event."""
         self._publish_search_soon(self.query_one("#search_input", Input).value)
+
+    def on_got_search_result(self, event: GotSearchResult) -> None:
+        """Handle got search result event."""
+        self._update_table_soon()
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""
@@ -256,19 +262,30 @@ class EverywhereApp(App):
         """Publish a search soon (debounced)."""
         # Reject empty searches
         if search_term == "":
+            self._update_table_soon()
             return
 
-        self._update_results_timer.pause()
         if hasattr(self, "_search_timer") and self._search_timer is not None:
             self._search_timer.cancel()
 
         def _publish_search():
             publish(UserSearched(query=search_term))
             self._search_timer = None
-            self._update_results_timer.resume()
 
         self._search_timer = threading.Timer(DEBOUNCE_LATENCY, _publish_search)
         self._search_timer.start()
+
+    def _update_table_soon(self) -> None:
+        """Update table soon (debounced)."""
+        if hasattr(self, "_update_table_timer") and self._update_table_timer is not None:
+            self._update_table_timer.cancel()
+
+        def _update_table():
+            self._update_results_table()
+            self._update_table_timer = None
+
+        self._update_table_timer = threading.Timer(DEBOUNCE_LATENCY, _update_table)
+        self._update_table_timer.start()
 
     def on_input_changed(self, message: Input.Changed) -> None:
         """Handle search input changes."""
@@ -277,32 +294,48 @@ class EverywhereApp(App):
         self._publish_search_soon(message.value)
 
     def _update_results_table(self) -> None:
+        current_search_term = self.query_one("#search_input", Input).value
+        table = self.query_one("#results_table", DataTable)
+
+        if current_search_term.strip() == "" and table.row_count > 0:
+            table.clear()
+            return
+
         if not self._results_collector.has_new_results:
             return
 
         current_query, results = self._results_collector.sync_results()
-        table = self.query_one("#results_table", DataTable)
+        if current_search_term != current_query:
+            return
+
         with self.batch_update():
-            table.clear()
-
-            current_search_term = self.query_one("#search_input", Input).value
-            if current_search_term == "" or current_search_term != current_query:
-                return
-
-            for result in results:
+            for i, result in enumerate(results):
                 path = result.value
                 confidence_label = confidence_to_color(result.confidence)
-                try:
-                    stat = path.stat()
-                    table.add_row(
-                        confidence_label,
-                        path.name,
-                        str(path),
-                        format_size(stat.st_size),
-                        format_date(stat.st_mtime_ns),
-                    )
-                except (OSError, FileNotFoundError):
-                    table.add_row(confidence_label, path.name, str(path), "N/A", "N/A")
+                stat = path.stat()
+                new_col_values = [
+                    confidence_label,
+                    path.name,
+                    str(path),
+                    format_size(stat.st_size),
+                    format_date(stat.st_mtime_ns),
+                ]
+
+                if i < table.row_count:
+                    old_col_values = table.get_row_at(i)
+                    for j, (old_value, new_value) in enumerate(zip(old_col_values, new_col_values, strict=True)):
+                        if old_value != new_value:
+                            table.update_cell_at(Coordinate(row=i, column=j), new_value)
+                else:
+                    table.add_row(*new_col_values)
+
+            if table.row_count > len(results):
+                keys_to_remove = [
+                    table.coordinate_to_cell_key(Coordinate(row=row_index, column=0))[0]
+                    for row_index in range(len(results), table.row_count)
+                ]
+                for row_key in keys_to_remove:
+                    table.remove_row(row_key)
 
     @work
     async def action_select_directories(self) -> None:
