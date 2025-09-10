@@ -239,6 +239,9 @@ class ONNXTextSearchProvider(SearchProvider):
         self._idle.wait()
         self._idle.clear()
         results: list[SearchResult] = []
+        if len(query.text) < 5:
+            return []
+
         query_embedding = self.embed([query.text])[0]
         # Normalize query to align with normalized corpus vectors
         query_embedding = query_embedding / np.linalg.norm(query_embedding)
