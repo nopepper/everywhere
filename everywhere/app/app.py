@@ -312,6 +312,8 @@ class EverywhereApp(App):
         with self.batch_update():
             for i, result in enumerate(results):
                 path = result.value
+                if not path.exists():
+                    continue
                 confidence_label = confidence_to_color(result.confidence)
                 stat = path.stat()
                 new_col_values = [

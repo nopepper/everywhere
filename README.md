@@ -2,31 +2,58 @@
 
 Search is good. Search could be better. Let's make it better.
 
+![Demo GIF](./docs/demo.gif)
+
 ## Why this exists
 
 Document understanding has come a long way, thanks to modern AI. With it, we got a swarm of toolkits, frameworks and APIs that want to do them all, but few have dared to do as little as possible.
 
 The project was inspired by [Everything](https://www.voidtools.com/support/everything/), a filename search engine for Windows that is outstanding in its ability to index and let you search your entire filesystem in real time, all while being trivial to set up and use. **Everywhere**'s goal is enable system-wide semantic search while staying true to those same principles.
 
-## What it does
+## Disclaimer
 
-**Everywhere** currently has two main components:
+**Everywhere** is in the very early stages of development. It is not yet suitable for serious use. Expect bugs, performance issues, and breaking changes.
 
-1. A Python core library that handles file parsing, indexing and retrieval
+## Getting Started
 
-2. A CLI app for interacting with the library as an end user.
+Make sure [uv](https://github.com/astral-sh/uv) is installed on your system.
+
+Try out the app without installing:
+
+```bash
+uvx --from git+https://github.com/nopepper/everywhere.git everywhere
+```
+
+Installing and running:
+
+```bash
+uv tool install git+https://github.com/nopepper/everywhere.git
+uvx everywhere
+```
+
+Alternatively, you can clone the repository and run it from the source:
+
+```bash
+git clone https://github.com/nopepper/everywhere.git
+cd everywhere
+uv run everywhere
+```
+
+## Usage
+
+When you first run the app, it will start indexing the `data_test` directory in your current working directory. You can change the directories to be indexed from the command palette (Ctrl+P, then select "Pick indexed directories...").
 
 ## Roadmap
 
 - [ ] Add more search providers
   - [ ] Fuzzy string search
   - [x] PDF search (text only)
-  - [x] PDF search (images)
+  - [x] PDF search (OCR)
   - [x] Word document search (text only)
-- [ ] Improve performance
+- [x] Improve performance
   - [x] Maximize throughput on CPU
   - [x] Vector database support
-  - [ ] Vector database saving/loading
+  - [x] Vector database saving/loading
   - [x] File watching with [watchdog](https://github.com/gorakhargosh/watchdog)
 - [ ] Improve UX
   - [x] Indexing in background thread
@@ -62,6 +89,10 @@ The project was inspired by [Everything](https://www.voidtools.com/support/every
   - [ ] Faster filesystem parsing
   - [ ] Remote search providers (GDrive, Notion)
   - [ ] Image search providers
+
+## Contributing
+
+Feel free to open an issue if you find a bug or have an idea for a new feature.
 
 ## License
 

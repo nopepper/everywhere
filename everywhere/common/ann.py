@@ -122,7 +122,6 @@ class ANNIndex:
 
         ids_to_remove = self._ids_by_path.pop(path_str)
         for ann_id in ids_to_remove:
-            self._index.mark_deleted(ann_id)
             if ann_id in self._paths_by_id:
                 del self._paths_by_id[ann_id]
         return True
@@ -168,6 +167,25 @@ class ANNIndex:
                 self.remove(path)
                 removed += 1
                 continue
+
+        # Re-create the index if there are IDs to remove
+        current_ids = set(self._paths_by_id.keys())
+        loaded_ids = set(self._index.ids)
+        ids_to_remove = loaded_ids - current_ids
+        if len(ids_to_remove) > 0:
+            recreated = Index(
+                self._index.space,
+                self._index.num_dimensions,
+                self._index.M,
+                self._index.ef_construction,
+                max_elements=len(self._index),
+                storage_data_type=self._index.storage_data_type,
+            )
+            ordered_ids = list(current_ids)
+            if ordered_ids:
+                recreated.add_items(self._index.get_vectors(ordered_ids), ordered_ids)
+            self._index = recreated
+
         return removed
 
     def start_eventful(self) -> "_EventfulANNIndex":

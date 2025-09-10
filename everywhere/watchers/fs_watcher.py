@@ -38,12 +38,16 @@ class _FSWatchdogEventHandler(FileSystemEventHandler):
                 self.timers[src_path].cancel()
 
             def _publish():
-                publish(
-                    FileChanged(
-                        path=src_path,
-                        event_type=ChangeType.DELETE if event.event_type == "deleted" else ChangeType.UPSERT,
-                    )
-                )
+                src_path = self._decode_path(event.src_path)
+                try:
+                    dest_path = self._decode_path(event.dest_path)
+                except Exception:
+                    dest_path = None
+                for p in [src_path, dest_path]:
+                    if p is None:
+                        continue
+                    ev_type = ChangeType.UPSERT if p.exists() else ChangeType.DELETE
+                    publish(FileChanged(path=p, event_type=ev_type))
                 del self.timers[src_path]
 
             self.timers[src_path] = threading.Timer(0.5, _publish)  # 0.5s grace period

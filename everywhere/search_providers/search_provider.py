@@ -57,6 +57,7 @@ class _EventfulProvider:
                 publish(IndexingFinished(success=True, path=path))
             except Exception:
                 publish(IndexingFinished(success=False, path=path))
+                raise
                 # optionally log/trace here
 
     def _search_loop(self) -> None:

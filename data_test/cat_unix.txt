@@ -1,0 +1,3 @@
+cat is a shell command for writing the content of a file or input stream to standard output. The name is an abbreviation of catenate, a variant form of concatenate.[1][2] Originally developed for Unix, it is available on many operating systems and shells today.
+
+In addition to combining files, cat is commonly used to copy files and in particular to copy a file to the terminal monitor. Unless redirected, cat outputs file content on-screen.[3] 

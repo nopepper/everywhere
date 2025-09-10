@@ -1,6 +1,5 @@
 """ONNX-based text search provider."""
 
-import math
 import os
 import threading
 from functools import cached_property
@@ -133,12 +132,11 @@ class ONNXTextSearchProvider(SearchProvider):
         if path.suffix.strip(".") not in self.supported_types:
             return False
 
+        if not path.exists():
+            return self._index.remove(path)
+
         if path.stat().st_size > self.max_filesize_mb * 1024 * 1024:
             return False
-
-        if not path.exists():
-            self._index.remove(path)
-            return True
 
         if path in self._index:
             return False
@@ -182,11 +180,12 @@ class ONNXTextSearchProvider(SearchProvider):
         for path, distance in self._index.query(query_embedding, self.k):
             similarity = 1 - distance
             results.append(SearchResult(value=path, confidence=similarity))
+
         results_filtered: list[SearchResult] = []
         for path, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
-            max_chunk_score = max(x.confidence for x in group)
-            num_chunks = len(self._index._index_helper._ids_by_path[path.as_posix()])
-            doc_score = max_chunk_score / math.log(1 + num_chunks)
+            chunk_score = np.mean([x.confidence for x in group]).item()
+            # num_chunks = len(self._index._index_helper._ids_by_path[path.as_posix()])
+            doc_score = chunk_score  # / math.log(1 + 0.1 * num_chunks)
             results_filtered.append(SearchResult(value=path, confidence=doc_score))
 
         self._idle.set()
