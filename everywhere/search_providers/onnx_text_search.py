@@ -71,7 +71,7 @@ class ONNXTextSearchProvider(SearchProvider):
         description="Path to the ONNX model.",
     )
     tokenizer_path: Path = Field(default_factory=_get_default_local_dir, description="Path to the tokenizer.")
-    ocr_enabled: bool = Field(default=False, description="Whether to enable OCR.")
+    ocr_enabled: bool = Field(default=True, description="Whether to enable OCR.")
 
     k: int = Field(default=1000, description="Number of results to return.")
     min_chunk_size: int = Field(default=16, description="Minimum chunk size for the text.")

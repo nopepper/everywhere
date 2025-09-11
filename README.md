@@ -2,15 +2,11 @@
 
 ![Demo GIF](./docs/demo.gif)
 
-## Why this exists
-
-AI has gotten pretty good at understanding text. That's great. Agents and RAG pipelines are bulky, slow and complex. That's not so great. **Everywhere** is a simple terminal app that uses fast, on-device methods to index and let you search your entire filesystem in real time.
-
-The project takes inspiration from [Everything](https://www.voidtools.com/support/everything/), the ultra-efficient filename search engine for Windows. While not quite as _blazingly fast_, Everywhere strives to be lightweight, effective and self-explanatory to use.
+**Everywhere** builds an index of your filesystem and lets you search it in real time.
 
 ## Disclaimer
 
-**Everywhere** is in the very early stages of development. It is not yet suitable for serious use. Expect bugs, performance issues, and breaking changes.
+This project is in the very early stages of development. It is not yet suitable for serious use. Expect bugs, performance issues, and breaking changes.
 
 ## Getting Started
 
@@ -42,6 +38,29 @@ everywhere
 - Everywhere continuously monitors the filesystem for changes and updates the index accordingly.
 - All configs and data are stored in `/home/{user}/.local/share/EverywhereApp` (Linux) and `%LOCALAPPDATA%\EverywhereApp` (Windows).
 - Due to [Voyager](https://github.com/spotify/voyager) limitations, ARM CPUs are not supported on Windows.
+
+## Why this exists
+
+AI has gotten pretty good at understanding text. That's great. Agents and RAG pipelines are bulky, slow and complex. That's not so great. **Everywhere** is a simple terminal app that uses fast, on-device methods to index and let you search your entire filesystem in real time.
+
+The project takes inspiration from [Everything](https://www.voidtools.com/support/everything/), the ultra-efficient filename search engine for Windows. While not quite as _blazingly fast_, Everywhere strives to be lightweight, effective and self-explanatory to use.
+
+## Search type support matrix
+
+✅ - Supported
+⏳ - Planned
+❌ - Not planned
+
+| File type | Full-text | Semantic Text | OCR | Semantic Image |
+|-----------|------------------|---------------|-----|----------------|
+| `txt` | ⏳ | ✅ | - | - |
+| `md` | ⏳ | ✅ | - | - |
+| `pdf` | ⏳ | ✅ | ✅ | ⏳ |
+| `docx` | ⏳ | ✅ | ❌ | ❌ |
+| `pptx` | ⏳ | ✅ | ❌ | ❌ |
+| `epub` | ⏳ | ✅ | ❌ | ❌ |
+| `jpg` | - | - | ⏳ | ⏳ |
+| `png` | - | - | ⏳ | ⏳ |
 
 ## Development
 
