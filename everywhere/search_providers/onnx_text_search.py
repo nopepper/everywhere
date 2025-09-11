@@ -253,10 +253,9 @@ class ONNXTextSearchProvider(SearchProvider):
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
-        self._idle.wait()
         self._idle.clear()
         results: list[SearchResult] = []
-        if len(query.text) < 5:
+        if len(query.text) == 0:
             return []
 
         query_embedding = self.embed([query.text])[0]
