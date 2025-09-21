@@ -4,7 +4,6 @@ import hashlib
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from pathlib import Path
 from queue import SimpleQueue
 
 from pydantic import BaseModel
@@ -52,13 +51,13 @@ class _EventfulProvider:
             item = self._task_q.get()
             if item is _STOP:
                 break
-            path = item
-            publish(IndexingStarted(path=path))
+            event = item
+            publish(IndexingStarted(path=event.path))
             try:
-                self.parent.update(path)
-                publish(IndexingFinished(success=True, path=path))
+                self.parent.update(event)
+                publish(IndexingFinished(success=True, path=event.path))
             except Exception:
-                publish(IndexingFinished(success=False, path=path))
+                publish(IndexingFinished(success=False, path=event.path))
                 raise
                 # optionally log/trace here
 
@@ -95,7 +94,7 @@ class _EventfulProvider:
     @correlated
     def on_file_changed(self, event: FileChanged) -> None:
         publish(GotIndexingRequest(path=event.path))
-        self._task_q.put(event.path)
+        self._task_q.put(event)
 
     @correlated
     def on_user_searched(self, event: UserSearched) -> None:
@@ -112,7 +111,7 @@ class SearchProvider(BaseModel, ABC):
         """Supported document types."""
 
     @abstractmethod
-    def update(self, path: Path) -> bool:
+    def update(self, event: FileChanged) -> bool:
         """Update the provider."""
 
     @abstractmethod

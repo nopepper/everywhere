@@ -33,6 +33,10 @@ dev = [
     "textual-dev>=1.7.0",
     "huggingface-hub[cli]>=0.30.0",
 ]
+test = [
+    "pytest>=8.4.2",
+    "pytest-textual-snapshot>=1.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -41,6 +45,7 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+extend-exclude = ["data_test"]
 
 [tool.ruff.lint]
 select = [

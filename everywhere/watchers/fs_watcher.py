@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field, field_validator
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..events import publish
+from ..events import add_callback, publish
+from ..events.app import UserSelectedDirectories
 from ..events.watcher import ChangeType, FileChanged
 
 
@@ -82,11 +83,59 @@ class FSWatcher(BaseModel):
         self._fs_watcher.start()
         self._running = True
         threading.Thread(target=self._walk_and_publish, daemon=True).start()
+        # Listen for directory selection events
+        add_callback(UserSelectedDirectories, self._on_directories_selected)
 
     def stop(self):
         """Teardown the filesystem watcher."""
         self._fs_watcher.stop()
         self._running = False
+
+    def _on_directories_selected(self, event: UserSelectedDirectories) -> None:
+        """Handle user selected directories event."""
+        # Convert string paths to Path objects
+        new_paths = event.directories
+
+        # Only restart if paths have actually changed
+        if set(new_paths) != set(self.fs_path):
+            self._restart_with_new_paths(new_paths)
+
+    def _restart_with_new_paths(self, new_paths: list[Path]) -> None:
+        """Restart the watcher with new paths."""
+        # Get files that are no longer being watched
+        removed_files = self._get_removed_files(new_paths)
+
+        # Emit DELETE events for files that are no longer watched
+        for file_path in removed_files:
+            publish(FileChanged(path=file_path, event_type=ChangeType.DELETE))
+
+        # Stop current watcher
+        self._fs_watcher.stop()
+        self._running = False
+
+        # Update paths
+        self.fs_path = new_paths
+
+        # Start new watcher
+        self._fs_watcher = _FSWatchdog(self.fs_path)
+        self._fs_watcher.start()
+        self._running = True
+        threading.Thread(target=self._walk_and_publish, daemon=True).start()
+
+    def _get_removed_files(self, new_paths: list[Path]) -> set[Path]:
+        """Get files that were previously watched but are no longer watched."""
+        if not self._running:
+            return set()
+
+        # Get all files currently being watched
+        old_files = set(self.walk_all())
+
+        # Get all files that will be watched with new paths
+        temp_watcher = FSWatcher(fs_path=new_paths, supported_types=self.supported_types)
+        new_files = set(temp_watcher.walk_all())
+
+        # Return files that were watched before but won't be watched anymore
+        return old_files - new_files
 
     @field_validator("fs_path")
     @classmethod

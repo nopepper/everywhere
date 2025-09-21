@@ -19,6 +19,7 @@ from tokenizers import Tokenizer
 from ..common.ann import ANNIndex
 from ..common.app import app_dirs
 from ..common.pydantic import SearchQuery, SearchResult
+from ..events.watcher import ChangeType, FileChanged
 from .search_provider import SearchProvider
 
 
@@ -187,14 +188,15 @@ class ONNXTextSearchProvider(SearchProvider):
             embs = embs.reshape(1, -1)
         return _mean_pooling(embs, batch["attention_mask"])
 
-    def update(self, path: Path) -> bool:
+    def update(self, event: FileChanged) -> bool:
         """Handle a change event."""
+        path = event.path
         extension = path.suffix.strip(".")
 
         if extension not in self.supported_types:
             return False
 
-        if not path.exists():
+        if not path.exists() or event.event_type == ChangeType.DELETE:
             return self._index.remove(path)
 
         if path.stat().st_size > self.max_filesize_mb * 1024 * 1024:

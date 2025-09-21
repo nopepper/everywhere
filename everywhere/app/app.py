@@ -20,15 +20,14 @@ from everywhere.events.search_provder import GotSearchResult, IndexingFinished
 
 from ..common.app import app_dirs
 from ..events import add_callback, publish
-from ..events.app import UserSearched
-from ..watchers.fs_watcher import FSWatcher
+from ..events.app import UserSearched, UserSelectedDirectories
 from .app_config import AppComponents
 from .collector import ResultsCollector
 from .directory_selector import DirectorySelector
 from .progress import ProgressTracker
 from .status_bar import StatusBar
 
-DEBOUNCE_LATENCY = 0.1
+DEFAULT_DEBOUNCE_LATENCY = 0.1
 RESULT_LIMIT = 1000
 
 
@@ -171,11 +170,13 @@ class EverywhereApp(App):
 
     search_term = reactive("")
 
-    def __init__(self, config_path: Path | None = None):
+    def __init__(self, config_path: Path | None = None, autostart: bool = True, debounce_latency: float | None = None):
         """Initialize the Everything app.
 
         Args:
             config_path: Path to the app configuration.
+            autostart: Whether to automatically start search providers and file watcher.
+            debounce_latency: Debounce latency for search and updates. If None, uses default.
         """
         super().__init__()
         self.config_path = config_path or app_dirs.app_config_path
@@ -183,10 +184,18 @@ class EverywhereApp(App):
             self.config = AppComponents()
         else:
             self.config = AppComponents.model_validate_json(self.config_path.read_text())
-        self.search_providers = [provider.start_eventful() for provider in self.config.search_providers]
-        self.config.fs_watcher.start()
+
+        self.debounce_latency = debounce_latency if debounce_latency is not None else DEFAULT_DEBOUNCE_LATENCY
         self._progress = ProgressTracker()
         self._results_collector = ResultsCollector()
+
+        if autostart:
+            self.start_services()
+
+    def start_services(self) -> None:
+        """Start search providers and file watcher."""
+        self.search_providers = [provider.start_eventful() for provider in self.config.search_providers]
+        self.config.fs_watcher.start()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -275,7 +284,7 @@ class EverywhereApp(App):
             publish(UserSearched(query=search_term))
             self._search_timer = None
 
-        self._search_timer = threading.Timer(DEBOUNCE_LATENCY, _publish_search)
+        self._search_timer = threading.Timer(self.debounce_latency, _publish_search)
         self._search_timer.start()
 
     def _update_table_soon(self) -> None:
@@ -287,7 +296,7 @@ class EverywhereApp(App):
             self._update_results_table()
             self._update_table_timer = None
 
-        self._update_table_timer = threading.Timer(DEBOUNCE_LATENCY, _update_table)
+        self._update_table_timer = threading.Timer(self.debounce_latency, _update_table)
         self._update_table_timer.start()
 
     def on_input_changed(self, message: Input.Changed) -> None:
@@ -345,8 +354,7 @@ class EverywhereApp(App):
     @work
     async def action_select_directories(self) -> None:
         """Open the directory selection dialog."""
-        old_watcher = self.config.fs_watcher
-        current_paths = old_watcher.fs_path
+        current_paths = self.config.fs_watcher.fs_path
         if isinstance(current_paths, Path):
             current_paths = [current_paths]
 
@@ -360,13 +368,7 @@ class EverywhereApp(App):
         if not selected:
             return
 
-        old_watcher_dump = old_watcher.model_dump()
-        old_watcher_dump["fs_path"] = list(selected)
-        old_watcher.stop()
-        new_watcher = FSWatcher(**old_watcher_dump)
-        self.config.fs_watcher = new_watcher
-        new_watcher.start()
-        self.save_config()
+        publish(UserSelectedDirectories(directories=list(selected)))
 
     def save_config(self) -> None:
         """Save the app configuration."""
