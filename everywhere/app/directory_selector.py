@@ -125,8 +125,6 @@ class DirectorySelector(ModalScreen[set[Path]]):
             self.path_index[root] = node
         for path in sorted(self.selected):
             self._reveal_path(path)
-
-        # If no initial paths are selected, unfold to current working directory
         if not self.selected:
             self._reveal_path(Path.cwd())
 
@@ -147,17 +145,7 @@ class DirectorySelector(ModalScreen[set[Path]]):
         return roots or [Path("/")]
 
     def _has_children(self, path: Path) -> bool:
-        """Check if a directory has any subdirectories."""
-        try:
-            with os.scandir(path) as it:
-                for entry in it:
-                    if entry.is_dir(follow_symlinks=False) and (
-                        self.show_hidden or not Path(entry.name).name.startswith(".")
-                    ):
-                        return True
-            return False
-        except Exception:
-            return False
+        return bool(self._iter_subdirs(path))
 
     def _load_children(self, node: TreeNode[NodeData]) -> None:
         """Populate immediate subdirectories lazily."""
@@ -167,32 +155,29 @@ class DirectorySelector(ModalScreen[set[Path]]):
         path = data.path
         if node.children:
             return
-        try:
-            with os.scandir(path) as it:
-                subdirs = [
-                    Path(e.path)
-                    for e in it
-                    if e.is_dir(follow_symlinks=False) and (self.show_hidden or not Path(e.name).name.startswith("."))
-                ]
-        except Exception:
-            subdirs = []
+        subdirs = self._iter_subdirs(path)
 
         subdirs.sort(key=lambda p: p.name.lower())
         for d in subdirs:
             child = node.add(self._label_for(d), data=NodeData(d), allow_expand=self._has_children(d))
             self.path_index[d] = child
 
+    def _iter_subdirs(self, path: Path) -> list[Path]:
+        try:
+            with os.scandir(path) as it:
+                return [
+                    Path(e.path)
+                    for e in it
+                    if e.is_dir(follow_symlinks=False) and (self.show_hidden or not Path(e.name).name.startswith("."))
+                ]
+        except Exception:
+            return []
+
     def _label_for(self, path: Path) -> str:
         state = self._state_for(path)
         mark = CHECKED if state == "checked" else PARTIAL if state == "partial" else UNCHECKED
-
-        # root of a volume (C:) or POSIX root (/)
         is_root = path == Path(path.anchor)
-
-        # Use ternary operator as suggested by linter
         name = (path.drive or path.anchor).rstrip("\\/") if is_root else path.name or str(path)
-
-        # Add a placeholder for alignment if there are no children
         prefix = "  " if not self._has_children(path) else ""
         return f"{prefix}{mark}{name}"
 
@@ -212,19 +197,42 @@ class DirectorySelector(ModalScreen[set[Path]]):
             self._refresh_labels(c)
 
     def _refresh_branch(self, node: TreeNode[NodeData]) -> None:
-        """Refresh labels from the nearest root to avoid flicker."""
         while node.parent is not None:
             node = node.parent
         self._refresh_labels(node)
 
     def _toggle(self, path: Path) -> None:
         path = path.resolve()
-        overlaps = {p for p in self.selected if p.is_relative_to(path) or path.is_relative_to(p)}
-        if path in overlaps and len(overlaps) == 1:
-            self.selected.remove(path)
+        state = self._state_for(path)
+
+        if state == "checked":
+            selected_directly = path in self.selected
+            selected_ancestors = [p for p in self.selected if p != path and path.is_relative_to(p)]
+            self.selected = {p for p in self.selected if not p.is_relative_to(path)}
+
+            if selected_ancestors and not selected_directly:
+                parent_in_selected = max(selected_ancestors, key=lambda p: len(p.parts))
+                self.selected.discard(parent_in_selected)
+                for child_path in self._iter_subdirs(parent_in_selected):
+                    if child_path != path:
+                        self.selected.add(child_path)
+            return
         else:
-            self.selected -= overlaps
+            self.selected = {p for p in self.selected if not p.is_relative_to(path)}
             self.selected.add(path)
+            if path.parent != path:
+                self._consolidate_selection(path.parent)
+
+    def _consolidate_selection(self, parent: Path) -> None:
+        if parent == parent.parent:
+            return
+
+        subdirs = self._iter_subdirs(parent)
+        if subdirs and all(self._state_for(d) == "checked" for d in subdirs):
+            self.selected = {p for p in self.selected if not p.is_relative_to(parent)}
+            self.selected.add(parent)
+            if parent.parent != parent:
+                self._consolidate_selection(parent.parent)
 
     def _reveal_path(self, path: Path) -> None:
         root = next((r for r in self.roots if path.anchor.lower() == r.anchor.lower()), self.roots[0])
