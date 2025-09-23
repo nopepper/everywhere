@@ -2,6 +2,7 @@
 
 import threading
 from collections.abc import Callable
+from typing import Any
 
 
 class DebouncedRunner:
@@ -12,7 +13,7 @@ class DebouncedRunner:
         self._delay = delay
         self._timer: threading.Timer | None = None
 
-    def submit(self, func: Callable[[], None]) -> None:
+    def submit(self, func: Callable[[], Any]) -> None:
         """Run the function."""
         if self._timer:
             self._timer.cancel()

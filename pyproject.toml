@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-everywhere = "everywhere.app.app:main"
+everywhere = "everywhere.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -33,10 +33,7 @@ dev = [
     "textual-dev>=1.7.0",
     "huggingface-hub[cli]>=0.30.0",
 ]
-test = [
-    "pytest>=8.4.2",
-    "pytest-textual-snapshot>=1.1.0",
-]
+test = ["pytest>=8.4.2", "pytest-textual-snapshot>=1.1.0"]
 
 [build-system]
 requires = ["hatchling"]

@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import Label, ProgressBar
 
-from .progress import ProgressTracker
+from ..progress import ProgressTracker
 
 
 class StatusBar(Horizontal):
