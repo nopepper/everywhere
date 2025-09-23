@@ -1,5 +1,7 @@
 """Status bar widget for the Everywhere app."""
 
+from typing import Any
+
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import Label, ProgressBar
@@ -15,16 +17,10 @@ class StatusBar(Horizontal):
     the bottom-right.
     """
 
-    def __init__(self, progress: ProgressTracker, *, widget_id: str | None = None, classes: str | None = None):
-        """Initialize the status bar.
-
-        Args:
-            progress: The ProgressTracker instance to monitor.
-            widget_id: Optional widget ID.
-            classes: Optional CSS classes.
-        """
-        super().__init__(id=widget_id, classes=classes or "status-bar")
-        self._progress_tracker = progress
+    def __init__(self, *args: Any, **kwargs: Any):
+        """Initialize the status bar."""
+        super().__init__(*args, **kwargs)
+        self._progress_tracker = ProgressTracker()
         self._progress_bar = ProgressBar(id="status_progress_bar")
         self._warning_text = Label("Results may be incomplete", id="warning_text")
         self._spacer = Container(id="status_spacer")

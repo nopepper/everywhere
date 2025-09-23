@@ -6,18 +6,15 @@ from typing import Any, ClassVar
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.reactive import reactive
-from textual.widgets import Header, Input
+from textual.widgets import Header
 
-from ..common.debounce import DebouncedRunner
-from ..events import add_callback, publish
-from ..events.app import AppResized, UserSearched, UserSelectedDirectories
-from ..events.search_provder import IndexingFinished
+from ..events import publish
+from ..events.app import AppResized, UserSelectedDirectories
 from .app_config import get_app_components
 from .commands.directory_index import DirectoryIndexCommand
-from .progress import ProgressTracker
 from .screens.directory_selector import DirectorySelector
 from .widgets.results_table import ResultsTable
+from .widgets.search_bar import SearchBar
 from .widgets.status_bar import StatusBar
 
 DEBOUNCE_LATENCY = 0.1
@@ -33,10 +30,15 @@ class EverywhereApp(App):
     ]
 
     CSS = """
-    Input {
+    SearchBar {
         dock: top;
         height: 3;
         margin: 1;
+    }
+
+    SearchBar > Input {
+        height: 1fr;
+        width: 1fr;
     }
 
     DataTable {
@@ -49,7 +51,7 @@ class EverywhereApp(App):
         border: solid $accent;
     }
 
-    .status-bar {
+    StatusBar {
         dock: bottom;
         height: 1;
         padding: 0 1;
@@ -78,32 +80,19 @@ class EverywhereApp(App):
     }
     """
 
-    search_term = reactive("")
-
-    def __init__(self):
-        """Initialize the Everything app."""
-        super().__init__()
-        self._progress = ProgressTracker()
-        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
-
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
-        yield Input(placeholder="Search files and folders...", classes="search-input", id="search_input")
-        yield ResultsTable(id="results_table")
-        yield StatusBar(progress=self._progress)
+        yield SearchBar()
+        yield ResultsTable()
+        yield StatusBar()
 
     async def on_mount(self) -> None:
         """Set up the app when mounted."""
-        add_callback(IndexingFinished, self._on_indexing_finished)
-
         # If no paths are configured, prompt the user to select some until they do
         if len(get_app_components().indexed_paths) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
-
-    def _on_indexing_finished(self, _: Any) -> None:
-        self._search_debounced.submit(lambda: publish(UserSearched(query=self.query_one("#search_input", Input).value)))
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""
@@ -112,12 +101,6 @@ class EverywhereApp(App):
     def on_resize(self, _: Any) -> None:
         """Handle terminal resize."""
         publish(AppResized(width=self.console.size.width, height=self.console.size.height))
-
-    def on_input_changed(self, message: Input.Changed) -> None:
-        """Handle search input changes."""
-        if message.input.id != "search_input":
-            return
-        self._search_debounced.submit(lambda: publish(UserSearched(query=message.value)))
 
     @work
     async def action_select_directories(self) -> None:
