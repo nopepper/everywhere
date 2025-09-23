@@ -6,9 +6,8 @@ from textual.app import ComposeResult
 from textual.widgets import Input, Static
 
 from ...common.debounce import DebouncedRunner
-from ...events import add_callback, publish
+from ...events import publish
 from ...events.app import UserSearched
-from ...events.search_provder import IndexingFinished
 
 DEBOUNCE_LATENCY = 0.1
 
@@ -33,7 +32,6 @@ class SearchBar(Static):
 
     def on_mount(self) -> None:
         """Mount the search bar."""
-        add_callback(IndexingFinished, self._on_indexing_finished)
         self.input.focus()
 
     def on_input_changed(self, message: Input.Changed) -> None:
@@ -41,6 +39,3 @@ class SearchBar(Static):
         if message.input.id != "search_input":
             return
         self._debounced.submit(lambda: publish(UserSearched(query=message.value)))
-
-    def _on_indexing_finished(self, _: Any) -> None:
-        self._debounced.submit(lambda: publish(UserSearched(query=self.input.value)))
