@@ -8,8 +8,11 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Header
 
-from ..events import publish
-from ..events.app import AppResized, UserSelectedDirectories
+from everywhere.common.pydantic import SearchQuery
+
+from ..common.debounce import DebouncedRunner
+from ..events import add_callback, publish
+from ..events.app import AppResized, UserSearched, UserSelectedDirectories
 from .app_config import get_app_components
 from .commands.directory_index import DirectoryIndexCommand
 from .screens.directory_selector import DirectorySelector
@@ -93,6 +96,17 @@ class EverywhereApp(App):
         if len(get_app_components().indexed_paths) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
+        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
+        add_callback(UserSearched, self.on_user_searched)
+
+    def search_and_update(self, query: str) -> None:
+        """Search and update the results table."""
+        results = get_app_components().search(SearchQuery(text=query))
+        self.query_one(ResultsTable).update_results(results)
+
+    def on_user_searched(self, event: UserSearched) -> None:
+        """Handle user searched event."""
+        self._search_debounced.submit(lambda: self.search_and_update(event.query))
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""

@@ -19,7 +19,6 @@ dependencies = [
     "platformdirs>=4.4.0",
     "huggingface-hub>=0.34.4",
     "tokenizers>=0.22.0",
-    "pykka>=4.4.0",
 ]
 
 [project.scripts]

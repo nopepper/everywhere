@@ -45,9 +45,8 @@ def _download_default_models() -> bool:
     snapshot_download(
         repo_id=DEFAULT_REPO_ID,
         local_dir=local_dir,
-        local_dir_use_symlinks=False,
         allow_patterns=DEFAULT_REQUIRED,
-        resume_download=True,
+        force_download=False,
         revision="c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
     )
     after = all((local_dir / f).exists() for f in DEFAULT_REQUIRED)

@@ -38,10 +38,10 @@ class SearchBar(Static):
 
     def _on_indexing_finished(self, event: IndexingFinished) -> None:
         """Handle indexing finished event."""
-        self._debounced.submit(lambda: publish(UserSearched(query=self.input.value)))
+        publish(UserSearched(query=self.input.value))
 
     def on_input_changed(self, message: Input.Changed) -> None:
         """Handle input changed event."""
         if message.input.id != "search_input":
             return
-        self._debounced.submit(lambda: publish(UserSearched(query=message.value)))
+        publish(UserSearched(query=message.value))

@@ -42,7 +42,7 @@ def stream_windows(event_type: type[Event] | None, window_time: float = 0.1) -> 
 T = TypeVar("T")
 
 
-def add_callback(event_type: type[T] | None, callback: Callable[[T], Any]) -> None:
+def add_callback(event_type: type[T] | None, callback: Callable[[T], Any], skip_old: bool = False) -> None:
     """Register a callback for a specific event type."""
 
     def worker() -> None:
@@ -52,6 +52,8 @@ def add_callback(event_type: type[T] | None, callback: Callable[[T], Any]) -> No
             events = get_events(event_type, t_prev)
             if not events:
                 continue
+            if skip_old:
+                events = [events[-1]]
             for event in events:
                 callback(cast("T", event))
             t_prev = events[-1].event_t

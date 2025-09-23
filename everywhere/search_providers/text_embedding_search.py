@@ -44,7 +44,7 @@ class EmbeddingSearchProvider(SearchProvider):
         self._idle = threading.Event()
         self._idle.set()
         add_callback(FileChanged, self.on_file_changed)
-        add_callback(UserSearched, self.on_user_searched)
+        add_callback(UserSearched, self.on_user_searched, skip_old=True)
 
     def on_user_searched(self, event: UserSearched) -> None:
         """Handle a user searched event."""

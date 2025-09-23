@@ -249,7 +249,7 @@ class _EventfulANNIndex:
 
     def _trigger_save(self) -> None:
         with self._lock:
-            if self._timer:
+            if self._timer and self._timer.is_alive():
                 return
             self._timer = threading.Timer(self._GRACE_PERIOD_SECONDS, self._save_to_cache)
             self._timer.daemon = True
@@ -263,6 +263,8 @@ class _EventfulANNIndex:
             )
         )
         with self._lock:
-            self._index_helper.save()
-            self._timer = None
+            try:
+                self._index_helper.save()
+            finally:
+                self._timer = None
         publish(IndexSaveFinished())
