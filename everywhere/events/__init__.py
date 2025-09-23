@@ -3,6 +3,7 @@
 import threading
 import time
 from typing import Any, TypeVar, cast
+from collections.abc import Generator
 from collections.abc import Callable
 from .core import Event, EventBus, correlated
 
@@ -28,9 +29,14 @@ def get_last_event(event_type: type[Event] | type[Any] | None, after_t: int | No
     return _default_event_bus.get_last_event(event_type=event_type, after_t=after_t)
 
 
-def wait_for_event() -> None:
+def wait_for_event(event_type: type[Event] | None = None) -> None:
     """Wait for an event to be published."""
-    _default_event_bus.wait_for_event()
+    _default_event_bus.wait_for_event(event_type=event_type)
+
+
+def stream_windows(event_type: type[Event] | None, window_time: float = 0.1) -> Generator[list[Event], None, None]:
+    """Stream windows of events from the event bus."""
+    return _default_event_bus.stream_windows(event_type=event_type, window_time=window_time)
 
 
 T = TypeVar("T")

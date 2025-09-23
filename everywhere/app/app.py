@@ -2,7 +2,6 @@
 
 import argparse
 import shutil
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -16,11 +15,11 @@ from textual.coordinate import Coordinate
 from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Input
 
-from everywhere.events.search_provder import GotSearchResult, IndexingFinished
-
 from ..common.app import app_dirs
+from ..common.debounce import DebouncedRunner
 from ..events import add_callback, publish
 from ..events.app import UserSearched, UserSelectedDirectories
+from ..events.search_provder import GotSearchResult, IndexingFinished
 from .app_config import get_app_components, initialize_app_components
 from .collector import ResultsCollector
 from .directory_selector import DirectorySelector
@@ -175,6 +174,8 @@ class EverywhereApp(App):
         super().__init__()
         self._progress = ProgressTracker()
         self._results_collector = ResultsCollector()
+        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
+        self._update_table_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -188,22 +189,22 @@ class EverywhereApp(App):
         table = self.query_one("#results_table", DataTable)
         table.add_columns("", "Name", "Path", "Size", "Date Modified")
         table.cursor_type = "cell"
-        self._update_table_timer = None
-        add_callback(IndexingFinished, self.on_indexing_finished)
-        add_callback(GotSearchResult, self.on_got_search_result)
+        add_callback(IndexingFinished, lambda _: self.publish_search_soon())
+        add_callback(GotSearchResult, lambda _: self.update_table_soon())
 
         # If no paths are configured, prompt the user to select some until they do
         if len(get_app_components().indexed_paths) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
 
-    def on_indexing_finished(self, event: IndexingFinished) -> None:
-        """Handle indexing finished event."""
-        self._publish_search_soon(self.query_one("#search_input", Input).value)
-
-    def on_got_search_result(self, event: GotSearchResult) -> None:
-        """Handle got search result event."""
-        self._update_table_soon()
+    def publish_search_soon(self, search_term: str | None = None) -> None:
+        """Publish a search soon (debounced)."""
+        # Reject empty searches
+        search_term = search_term or self.query_one("#search_input", Input).value
+        if search_term == "":
+            self.update_table_soon()
+            return
+        self._search_debounced.submit(lambda: publish(UserSearched(query=search_term)))
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""
@@ -249,40 +250,15 @@ class EverywhereApp(App):
         """Handle terminal resize."""
         self._fit_table_columns()
 
-    def _publish_search_soon(self, search_term: str) -> None:
-        """Publish a search soon (debounced)."""
-        # Reject empty searches
-        if search_term == "":
-            self._update_table_soon()
-            return
-
-        if hasattr(self, "_search_timer") and self._search_timer is not None:
-            self._search_timer.cancel()
-
-        def _publish_search():
-            publish(UserSearched(query=search_term))
-            self._search_timer = None
-
-        self._search_timer = threading.Timer(DEBOUNCE_LATENCY, _publish_search)
-        self._search_timer.start()
-
-    def _update_table_soon(self) -> None:
+    def update_table_soon(self) -> None:
         """Update table soon (debounced)."""
-        if hasattr(self, "_update_table_timer") and self._update_table_timer is not None:
-            self._update_table_timer.cancel()
-
-        def _update_table():
-            self._update_results_table()
-            self._update_table_timer = None
-
-        self._update_table_timer = threading.Timer(DEBOUNCE_LATENCY, _update_table)
-        self._update_table_timer.start()
+        self._update_table_debounced.submit(self._update_results_table)
 
     def on_input_changed(self, message: Input.Changed) -> None:
         """Handle search input changes."""
         if message.input.id != "search_input":
             return
-        self._publish_search_soon(message.value)
+        self.publish_search_soon(message.value)
 
     def _update_results_table(self) -> None:
         current_search_term = self.query_one("#search_input", Input).value

@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
 
 from pydantic import Field
@@ -83,10 +83,9 @@ class EventBus:
 
     def submit_event(self, event: Event) -> None:
         """Submit an event to the event bus."""
-        with self._lock:
+        with self._lock, self._ping:
             self._events.append(event)
-            with self._ping:
-                self._ping.notify_all()
+            self._ping.notify_all()
 
     def get_events(
         self, event_type: type[Event] | type[Any] | None, after_t: int | None = None, limit: int | None = None
@@ -109,15 +108,47 @@ class EventBus:
                     break
         return result[::-1]
 
-    def wait_for_event(self) -> None:
+    def wait_for_event(self, event_type: type[Event] | None = None) -> None:
         """Wait for an event to be published."""
-        with self._ping:
-            self._ping.wait()
+        while True:
+            with self._ping:
+                self._ping.wait()
+            if event_type is not None:
+                with self._lock:
+                    if isinstance(self._events[-1], event_type):
+                        break
+            else:
+                break
 
     def get_last_event(self, event_type: type[Event] | None, after_t: int | None = None) -> Event:
         """Get the last event from the event bus."""
         result = self.get_events(event_type=event_type, after_t=after_t, limit=1)
         while len(result) == 0:
-            self.wait_for_event()
+            self.wait_for_event(event_type)
             result = self.get_events(event_type=event_type, after_t=after_t, limit=1)
         return result[0]
+
+    def stream_windows(
+        self, event_type: type[Event] | None, window_time: float = 0.1
+    ) -> Generator[list[Event], None, None]:
+        """Wait for an event, then yield a window of subsequent events.
+
+        This generator waits for an event of `event_type`. Once received, it waits
+        for `window_time` seconds and then yields all events that occurred after
+        the initial trigger event. This process repeats indefinitely.
+
+        Args:
+            event_type: The type of event to wait for to start a window.
+            window_time: The duration to wait before collecting events, in seconds.
+
+        Yields:
+            A list of events that occurred within the window after the trigger.
+        """
+        after_t: int | None = None
+        while True:
+            trigger_event = self.get_last_event(event_type=event_type, after_t=after_t)
+            start_of_window_t = trigger_event.event_t
+            time.sleep(window_time)
+            events_in_window = [trigger_event, *self.get_events(event_type=None, after_t=start_of_window_t)]
+            after_t = events_in_window[-1].event_t
+            yield events_in_window
