@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 from rich.text import Text
+from textual.coordinate import Coordinate
 from textual.reactive import reactive
 from textual.widgets import DataTable
 
@@ -126,23 +127,36 @@ class ResultsTable(DataTable):
         new_scores = normalize_scores([x.confidence for x in results_agg])
         results_agg = [SearchResult(value=x.value, confidence=new_scores[i]) for i, x in enumerate(results_agg)]
         results_agg.sort(key=lambda x: x.confidence, reverse=True)
-        return results_agg
+        return results_agg[:RESULT_LIMIT]
 
     def _redraw_results(self, results: list[SearchResult]) -> None:
         """Handle search results."""
-        self.clear()  # wipes all rows
-        for result in self._normalize_results(results):
+        results = self._normalize_results(results)
+
+        for i, result in enumerate(results):
             path = result.value
-            try:
-                if not path.exists():
-                    continue
-                stat = path.stat()
-                self.add_row(
-                    _confidence_chip(result.confidence),
-                    path.name,
-                    str(path),
-                    _format_size(stat.st_size),
-                    _format_date(stat.st_mtime_ns),
-                )
-            except Exception as e:
-                self.notify(f"Error adding result: {e}")
+            if not path.exists():
+                continue
+            confidence_label = _confidence_chip(result.confidence)
+            stat = path.stat()
+            new_col_values = [
+                confidence_label,
+                path.name,
+                str(path),
+                _format_size(stat.st_size),
+                _format_date(stat.st_mtime_ns),
+            ]
+            if i < self.row_count:
+                old_col_values = self.get_row_at(i)
+                for j, (old_value, new_value) in enumerate(zip(old_col_values, new_col_values, strict=True)):
+                    if old_value != new_value:
+                        self.update_cell_at(Coordinate(row=i, column=j), new_value)
+            else:
+                self.add_row(*new_col_values)
+        if self.row_count > len(results):
+            keys_to_remove = [
+                self.coordinate_to_cell_key(Coordinate(row=row_index, column=0))[0]
+                for row_index in range(len(results), self.row_count)
+            ]
+            for row_key in keys_to_remove:
+                self.remove_row(row_key)
