@@ -251,12 +251,17 @@ class _EventfulANNIndex:
         with self._lock:
             if self._timer and self._timer.is_alive():
                 return
-            self._timer = threading.Timer(self._GRACE_PERIOD_SECONDS, self._save_to_cache)
+            self._timer = threading.Timer(self._GRACE_PERIOD_SECONDS, self.save)
             self._timer.daemon = True
             self._timer.start()
 
     @correlated
-    def _save_to_cache(self) -> None:
+    def save(self) -> None:
+        """Save the index."""
+        with self._lock:
+            if self._timer and self._timer.is_alive():
+                self._timer.cancel()
+                self._timer = None
         publish(
             IndexSaveStarted(
                 index_size=self._index_helper._index.num_elements, path_count=len(self._index_helper._paths_by_id)
