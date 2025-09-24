@@ -6,12 +6,11 @@ from pathlib import Path
 import numpy as np
 from more_itertools import flatten
 
-from everywhere.events import add_callback
-
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events.watcher import FileChanged
+from ..events import publish
+from ..events.search_provder import GotIndexingRequest, IndexingFinished, IndexingStarted
+from ..index.fs_index import FSIndex
 from ..search.search_provider import SearchProviderService
-from ..watchers.fs_watcher import FSWatcher
 
 
 def normalize_scores(scores: list[float]) -> list[float]:
@@ -41,36 +40,41 @@ def normalize_results(results: list[SearchResult]) -> list[SearchResult]:
 class SearchController:
     """Search orchestrator service."""
 
-    def __init__(self, search_providers: list[SearchProviderService], fs_watcher: FSWatcher):
+    def __init__(self, search_providers: list[SearchProviderService], fs_index: FSIndex):
         """Initialize the search controller."""
         self.search_providers = search_providers
-        self.fs_watcher = fs_watcher
+        self.fs_watcher = fs_index
 
     @property
     def indexed_paths(self) -> list[Path]:
         """Indexed paths."""
-        return self.fs_watcher.fs_path
+        return self.fs_watcher.indexed_directories
 
     def start(self) -> None:
         """Start the search provider."""
         for provider in self.search_providers:
             provider.start()
-        add_callback(FileChanged, self._handle_file_change)
-        self.fs_watcher.start()
+        # Update the index
+        self.update_selected_paths(self.indexed_paths)
 
     def stop(self) -> None:
         """Stop the search provider."""
         for provider in self.search_providers:
             provider.stop()
+        self.fs_watcher.save()
 
-    def update_selected_paths(self, paths: list[Path]) -> None:
+    def update_selected_paths(self, directories: list[Path]) -> None:
         """Update the selected paths."""
-        self.fs_watcher._restart_with_new_paths(paths)
+        changes = []
+        for change in self.fs_watcher.update_fs_paths(directories):
+            publish(GotIndexingRequest(path=change.path))
+            changes.append(change)
 
-    def _handle_file_change(self, event: FileChanged) -> None:
-        """Handle a file changed event."""
-        for provider in self.search_providers:
-            provider.handle_file_change(event)
+        for change in changes:
+            for provider in self.search_providers:
+                publish(IndexingStarted(path=change.path))
+                provider.handle_file_change(change)
+                publish(IndexingFinished(path=change.path, success=True))
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""

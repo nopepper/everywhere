@@ -1,5 +1,6 @@
 """Application entry point."""
 
+import threading
 from functools import partial
 from pathlib import Path
 from typing import Any, ClassVar
@@ -7,8 +8,10 @@ from typing import Any, ClassVar
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.reactive import reactive
 from textual.widgets import Header
 
+from everywhere.app.app_config import AppConfig
 from everywhere.common.pydantic import SearchQuery
 from everywhere.events import publish
 
@@ -16,7 +19,6 @@ from ..common.debounce import DebouncedRunner
 from ..events.app import AppResized
 from .commands.directory_index import DirectoryIndexCommand
 from .screens.directory_selector import DirectorySelector
-from .search_controller import SearchController
 from .widgets.results_table import ResultsTable
 from .widgets.search_bar import SearchBar
 from .widgets.status_bar import StatusBar
@@ -84,10 +86,12 @@ class EverywhereApp(App):
     }
     """
 
-    def __init__(self, controller: SearchController, **kwargs: Any):
+    selected_directories: reactive[list[Path]] = reactive([])
+
+    def __init__(self, config: AppConfig):
         """Initialize the app."""
-        super().__init__(**kwargs)
-        self.controller = controller
+        super().__init__()
+        self._config = config
         self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
 
     def compose(self) -> ComposeResult:
@@ -100,10 +104,15 @@ class EverywhereApp(App):
     async def on_mount(self) -> None:
         """Set up the app when mounted."""
         # If no paths are configured, prompt the user to select some until they do
+        self.controller = self._config.build_controller()
+        self.controller.start()
         if len(self.controller.indexed_paths) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
-        self.controller.start()
+
+    def on_unmount(self) -> None:
+        """Called when the app is closed."""
+        self.controller.stop()
 
     def search_and_update(self, query: str) -> None:
         """Search and update the results table."""
@@ -126,22 +135,28 @@ class EverywhereApp(App):
     @work
     async def action_select_directories(self) -> None:
         """Open the directory selection dialog."""
-        current_paths = self.controller.indexed_paths
+        current_paths = self.selected_directories
         if isinstance(current_paths, Path):
             current_paths = [current_paths]
 
         worker = self.run_worker(self.push_screen_wait(DirectorySelector(initial_paths=current_paths)))
         selected = await worker.wait()  # returns the dismissal value
-
-        if not selected and len(self.controller.indexed_paths) == 0:
+        if not selected and len(current_paths) == 0:
             self.action_select_directories()
-            return
+        else:
+            self.selected_directories = list(selected)
 
-        if not selected:
-            return
-
-        self.controller.update_selected_paths(list(selected))
+    def watch_selected_directories(self, old: list[Path], new: list[Path]) -> None:
+        """Update the selected directories."""
+        threading.Thread(target=self.controller.update_selected_paths, args=(new,), daemon=True).start()
 
     def action_close_app(self) -> None:
         """Close the application."""
         self.exit()
+
+    def dump_config(self) -> AppConfig:
+        """Dump the app config."""
+        return AppConfig(
+            embedding_search=self._config.embedding_search,
+            selected_directories=self.selected_directories,
+        )

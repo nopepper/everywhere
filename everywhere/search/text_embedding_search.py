@@ -7,13 +7,13 @@ from pathlib import Path
 import numpy as np
 from pydantic import BaseModel, Field
 
-from ..common.ann import ANNIndex
 from ..common.app import app_dirs
 from ..common.pydantic import SearchQuery, SearchResult
 from ..events import add_callback, publish
 from ..events.app import UserSearched
 from ..events.search_provder import GotSearchResult, IndexingFinished, IndexingStarted
 from ..events.watcher import ChangeType, FileChanged
+from ..index.ann import ANNIndex
 from .search_provider import SearchProviderService
 from .text.chunking import TextChunker
 from .text.onnx_embedder import ONNXEmbedder

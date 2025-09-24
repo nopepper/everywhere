@@ -36,9 +36,12 @@ def main():
         config = AppConfig()
     else:
         config = AppConfig.model_validate_json(app_dirs.app_config_path.read_text())
-    controller = config.build_controller()
-    app = EverywhereApp(controller)
-    app.run()
+    app = EverywhereApp(config)
+    try:
+        app.run()
+    finally:
+        app_dirs.app_config_path.parent.mkdir(parents=True, exist_ok=True)
+        app_dirs.app_config_path.write_text(app.dump_config().model_dump_json(indent=2))
 
 
 if __name__ == "__main__":
