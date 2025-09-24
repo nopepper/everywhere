@@ -46,7 +46,7 @@ class _FSWatchdogEventHandler(FileSystemEventHandler):
                 for p in [src_path, dest_path]:
                     if p is None:
                         continue
-                    ev_type = ChangeType.UPSERT if p.exists() else ChangeType.DELETE
+                    ev_type = ChangeType.UPSERT if p.exists() else ChangeType.REMOVE
                     publish(FileChanged(path=p, event_type=ev_type))
                 del self.timers[src_path]
 
@@ -107,7 +107,7 @@ class FSWatcher(BaseModel):
 
         # Emit DELETE events for files that are no longer watched
         for file_path in removed_files:
-            publish(FileChanged(path=file_path, event_type=ChangeType.DELETE))
+            publish(FileChanged(path=file_path, event_type=ChangeType.REMOVE))
 
         # Stop current watcher
         self._fs_watcher.stop()

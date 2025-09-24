@@ -10,7 +10,7 @@ class ChangeType(StrEnum):
     """Event type."""
 
     UPSERT = "upsert"
-    DELETE = "delete"
+    REMOVE = "remove"
 
 
 class FileChanged(Event):

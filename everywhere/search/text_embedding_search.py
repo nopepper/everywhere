@@ -68,7 +68,7 @@ class EmbeddingSearchProvider(BaseModel, SearchProviderService):
         if path in self._index:
             return False
 
-        if not path.exists() or event.event_type == ChangeType.DELETE:
+        if not path.exists() or event.event_type == ChangeType.REMOVE:
             return self._index.remove(path)
 
         text_chunks = self.chunker.chunk(self.parser.parse(path))

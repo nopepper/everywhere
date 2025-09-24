@@ -9,67 +9,21 @@ It supports:
 - Correlation IDs to trace event flows through the system.
 """
 
-import contextvars
-import functools
 import threading
 import time
-import uuid
 from collections import deque
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from typing import Any
 
 from pydantic import Field
 
 from ..common.pydantic import FrozenBaseModel
 
-_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlation_id")
-
-
-def _get_correlation_id() -> str:
-    """Get the current correlation ID, or generate a new one if not set.
-
-    Returns:
-        The correlation ID for the current context.
-    """
-    try:
-        return _correlation_id.get()
-    except LookupError:
-        return str(uuid.uuid4())
-
-
-def correlated(func: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator to ensure a function executes within a correlated context.
-
-    If a correlation ID is not present in the context, a new one is generated
-    and set for the duration of the function call.
-
-    Args:
-        func: The function to wrap.
-
-    Returns:
-        The wrapped function.
-    """
-
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        try:
-            _correlation_id.get()
-            return func(*args, **kwargs)
-        except LookupError:
-            token = _correlation_id.set(str(uuid.uuid4()))
-            try:
-                return func(*args, **kwargs)
-            finally:
-                _correlation_id.reset(token)
-
-    return wrapper
-
 
 class Event(FrozenBaseModel):
     """Base class for all events, providing a default correlation ID."""
 
     event_t: int = Field(default_factory=time.time_ns)
-    correlation_id: str = Field(default_factory=_get_correlation_id)
 
 
 class EventBus:

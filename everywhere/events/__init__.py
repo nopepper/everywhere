@@ -5,7 +5,7 @@ import time
 from typing import Any, TypeVar, cast
 from collections.abc import Generator
 from collections.abc import Callable
-from .core import Event, EventBus, correlated
+from .core import Event, EventBus
 
 HISTORY_SIZE = 1_000_000
 

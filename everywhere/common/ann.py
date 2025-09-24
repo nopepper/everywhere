@@ -13,7 +13,7 @@ from typing import TypedDict
 import numpy as np
 from voyager import Index, Space, StorageDataType
 
-from ..events import correlated, publish
+from ..events import publish
 from ..events.ann import IndexSaveFinished, IndexSaveStarted
 
 
@@ -255,7 +255,6 @@ class _EventfulANNIndex:
             self._timer.daemon = True
             self._timer.start()
 
-    @correlated
     def save(self) -> None:
         """Save the index."""
         with self._lock:
