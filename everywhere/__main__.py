@@ -4,7 +4,7 @@ import argparse
 import shutil
 
 from .app.app import EverywhereApp
-from .app.app_config import initialize_app_components
+from .app.app_config import AppConfig
 from .common.app import app_dirs
 
 
@@ -32,8 +32,12 @@ def main():
     if args.temp:
         app_dirs.use_temp_app_data_dir()
 
-    initialize_app_components()
-    app = EverywhereApp()
+    if not app_dirs.app_config_path.exists():
+        config = AppConfig()
+    else:
+        config = AppConfig.model_validate_json(app_dirs.app_config_path.read_text())
+    controller = config.build_controller()
+    app = EverywhereApp(controller)
     app.run()
 
 

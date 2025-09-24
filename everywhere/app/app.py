@@ -1,5 +1,6 @@
 """Application entry point."""
 
+from functools import partial
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -9,13 +10,13 @@ from textual.binding import Binding
 from textual.widgets import Header
 
 from everywhere.common.pydantic import SearchQuery
+from everywhere.events import publish
 
 from ..common.debounce import DebouncedRunner
-from ..events import add_callback, publish
-from ..events.app import AppResized, UserSearched, UserSelectedDirectories
-from .app_config import get_app_components
+from ..events.app import AppResized
 from .commands.directory_index import DirectoryIndexCommand
 from .screens.directory_selector import DirectorySelector
+from .search_controller import SearchController
 from .widgets.results_table import ResultsTable
 from .widgets.search_bar import SearchBar
 from .widgets.status_bar import StatusBar
@@ -83,6 +84,12 @@ class EverywhereApp(App):
     }
     """
 
+    def __init__(self, controller: SearchController, **kwargs: Any):
+        """Initialize the app."""
+        super().__init__(**kwargs)
+        self.controller = controller
+        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
+
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
@@ -93,20 +100,20 @@ class EverywhereApp(App):
     async def on_mount(self) -> None:
         """Set up the app when mounted."""
         # If no paths are configured, prompt the user to select some until they do
-        if len(get_app_components().indexed_paths) == 0:
+        if len(self.controller.indexed_paths) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
-        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
-        add_callback(UserSearched, self.on_user_searched)
+        self.controller.start()
 
     def search_and_update(self, query: str) -> None:
         """Search and update the results table."""
-        results = get_app_components().search(SearchQuery(text=query))
-        self.query_one(ResultsTable).update_results(results)
+        results = self.controller.search(SearchQuery(text=query))
+        with self.batch_update():
+            self.query_one(ResultsTable).update_results(results)
 
-    def on_user_searched(self, event: UserSearched) -> None:
-        """Handle user searched event."""
-        self._search_debounced.submit(lambda: self.search_and_update(event.query))
+    def on_search_bar_search_triggered(self, message: SearchBar.SearchTriggered) -> None:
+        """Handle search requests from the search bar."""
+        self._search_debounced.submit(partial(self.search_and_update, message.query))
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""
@@ -119,21 +126,21 @@ class EverywhereApp(App):
     @work
     async def action_select_directories(self) -> None:
         """Open the directory selection dialog."""
-        current_paths = get_app_components().indexed_paths
+        current_paths = self.controller.indexed_paths
         if isinstance(current_paths, Path):
             current_paths = [current_paths]
 
         worker = self.run_worker(self.push_screen_wait(DirectorySelector(initial_paths=current_paths)))
         selected = await worker.wait()  # returns the dismissal value
 
-        if not selected and len(get_app_components().indexed_paths) == 0:
+        if not selected and len(self.controller.indexed_paths) == 0:
             self.action_select_directories()
             return
 
         if not selected:
             return
 
-        publish(UserSelectedDirectories(directories=list(selected)))
+        self.controller.update_selected_paths(list(selected))
 
     def action_close_app(self) -> None:
         """Close the application."""

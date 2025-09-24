@@ -5,7 +5,7 @@ from itertools import groupby
 from pathlib import Path
 
 import numpy as np
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from ..common.ann import ANNIndex
 from ..common.app import app_dirs
@@ -14,13 +14,13 @@ from ..events import add_callback, publish
 from ..events.app import UserSearched
 from ..events.search_provder import GotSearchResult, IndexingFinished, IndexingStarted
 from ..events.watcher import ChangeType, FileChanged
-from .search_provider import SearchProvider
+from .search_provider import SearchProviderService
 from .text.chunking import TextChunker
 from .text.onnx_embedder import ONNXEmbedder
 from .text.parsing import TextParser
 
 
-class EmbeddingSearchProvider(SearchProvider):
+class EmbeddingSearchProvider(BaseModel, SearchProviderService):
     """ONNX Text Embedder."""
 
     embedder: ONNXEmbedder = Field(default_factory=ONNXEmbedder)
@@ -32,26 +32,26 @@ class EmbeddingSearchProvider(SearchProvider):
         default_factory=lambda: app_dirs.app_cache_dir / "text_ann", description="Path to the ANN cache directory."
     )
 
-    @property
-    def supported_types(self) -> set[str]:
-        """Supported file types."""
-        return self.parser.supported_types
-
     def start(self) -> None:
         """Post init."""
         test_emb = self.embedder.embed(["test"])
         self._index = ANNIndex(dims=test_emb.shape[-1], cache_dir=self.ann_cache_dir).start_eventful()
         self._idle = threading.Event()
         self._idle.set()
-        add_callback(FileChanged, self.on_file_changed)
+        add_callback(FileChanged, self.handle_file_change)
         add_callback(UserSearched, self.on_user_searched, skip_old=True)
+
+    def stop(self) -> None:
+        """Stop the search provider."""
+        self._idle.set()
+        self._index.save()
 
     def on_user_searched(self, event: UserSearched) -> None:
         """Handle a user searched event."""
         for result in self.search(SearchQuery(text=event.query)):
             publish(GotSearchResult(query=event.query, result=result))
 
-    def on_file_changed(self, event: FileChanged) -> None:
+    def handle_file_change(self, event: FileChanged) -> None:
         """Handle a change event."""
         publish(IndexingStarted(path=event.path))
         try:
