@@ -13,6 +13,12 @@ class DebouncedRunner:
         self._delay = delay
         self._timer: threading.Timer | None = None
 
+    def cancel(self) -> None:
+        """Cancel the debounced runner."""
+        if self._timer:
+            self._timer.cancel()
+        self._timer = None
+
     def submit(self, func: Callable[[], Any]) -> None:
         """Run the function."""
         if self._timer:

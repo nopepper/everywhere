@@ -13,6 +13,7 @@ from typing import TypedDict
 import numpy as np
 from voyager import Index, Space, StorageDataType
 
+from ..common.debounce import DebouncedRunner
 from ..events import publish
 from ..events.ann import IndexSaveFinished, IndexSaveStarted
 
@@ -213,6 +214,7 @@ class _EventfulANNIndex:
     def __init__(self, index_helper: ANNIndex):
         self._index_helper = index_helper
         self._lock = threading.RLock()
+        self._debounced_save = DebouncedRunner(self._GRACE_PERIOD_SECONDS)
         self._timer: threading.Timer | None = None
 
     def __contains__(self, path: Path) -> bool:
@@ -249,18 +251,11 @@ class _EventfulANNIndex:
 
     def _trigger_save(self) -> None:
         with self._lock:
-            if self._timer and self._timer.is_alive():
-                return
-            self._timer = threading.Timer(self._GRACE_PERIOD_SECONDS, self.save)
-            self._timer.daemon = True
-            self._timer.start()
+            self._debounced_save.submit(self.save)
 
     def save(self) -> None:
         """Save the index."""
-        with self._lock:
-            if self._timer and self._timer.is_alive():
-                self._timer.cancel()
-                self._timer = None
+        self._debounced_save.cancel()
         publish(
             IndexSaveStarted(
                 index_size=self._index_helper._index.num_elements, path_count=len(self._index_helper._paths_by_id)

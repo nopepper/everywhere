@@ -110,7 +110,7 @@ class EverywhereApp(App):
             self.notify("Please select directories to index")
             self.action_select_directories()
 
-    def on_unmount(self) -> None:
+    async def on_unmount(self) -> None:
         """Called when the app is closed."""
         self.controller.stop()
 

@@ -91,6 +91,7 @@ uv run everywhere
   - [x] Aggregate search results from multiple search providers
   - [x] Directory selector & watcher
   - [ ] Search provider settings
+  - [ ] Fix libgl1 missing error due to RapidOCR
 - [ ] Improve quality
   - [x] Normalize embeddings
   - [x] Chunking upgrades
