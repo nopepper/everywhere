@@ -1,7 +1,9 @@
 """Search orchestrator."""
 
+from contextlib import ExitStack
 from itertools import groupby
 from pathlib import Path
+from typing import Any, Self
 
 import numpy as np
 from more_itertools import flatten
@@ -10,7 +12,7 @@ from ..common.pydantic import SearchQuery, SearchResult
 from ..events import publish
 from ..events.search_provider import GotIndexingRequest, IndexingFinished, IndexingStarted
 from ..index.fs_index import FSIndex
-from ..search.search_provider import SearchProviderService
+from ..search.search_provider import SearchProvider
 
 
 def normalize_scores(scores: list[float]) -> list[float]:
@@ -40,28 +42,27 @@ def normalize_results(results: list[SearchResult]) -> list[SearchResult]:
 class SearchController:
     """Search orchestrator service."""
 
-    def __init__(self, search_providers: list[SearchProviderService], fs_index: FSIndex):
+    def __init__(self, search_providers: list[SearchProvider], fs_index: FSIndex):
         """Initialize the search controller."""
         self.search_providers = search_providers
         self.fs_watcher = fs_index
+        self._stack = ExitStack()
 
     @property
     def indexed_paths(self) -> list[Path]:
         """Indexed paths."""
         return self.fs_watcher.indexed_directories
 
-    def start(self) -> None:
+    def __enter__(self) -> Self:
         """Start the search provider."""
-        for provider in self.search_providers:
-            provider.start()
-        # Update the index
+        self.search_providers = [self._stack.enter_context(provider) for provider in self.search_providers]
         self.update_selected_paths(self.indexed_paths)
+        return self
 
-    def stop(self) -> None:
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         """Stop the search provider."""
-        for provider in self.search_providers:
-            provider.stop()
         self.fs_watcher.save()
+        self._stack.close()
 
     def update_selected_paths(self, directories: list[Path]) -> None:
         """Update the selected paths."""
@@ -73,7 +74,7 @@ class SearchController:
         for change in changes:
             for provider in self.search_providers:
                 publish(IndexingStarted(path=change.path))
-                provider.handle_file_change(change)
+                provider.update_index(change)
                 publish(IndexingFinished(path=change.path, success=True))
 
     def search(self, query: SearchQuery) -> list[SearchResult]:

@@ -19,6 +19,7 @@ from ..common.debounce import DebouncedRunner
 from ..events.app import AppResized
 from .commands.directory_index import DirectoryIndexCommand
 from .screens.directory_selector import DirectorySelector
+from .search_controller import SearchController
 from .widgets.results_table import ResultsTable
 from .widgets.search_bar import SearchBar
 from .widgets.status_bar import StatusBar
@@ -88,10 +89,11 @@ class EverywhereApp(App):
 
     selected_directories: reactive[list[Path]] = reactive([])
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, controller: SearchController):
         """Initialize the app."""
         super().__init__()
         self._config = config
+        self.controller = controller
         self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
 
     def compose(self) -> ComposeResult:
@@ -104,15 +106,9 @@ class EverywhereApp(App):
     async def on_mount(self) -> None:
         """Set up the app when mounted."""
         # If no paths are configured, prompt the user to select some until they do
-        self.controller = self._config.build_controller()
-        self.controller.start()
         if len(self.controller.indexed_paths) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
-
-    async def on_unmount(self) -> None:
-        """Called when the app is closed."""
-        self.controller.stop()
 
     def search_and_update(self, query: str) -> None:
         """Search and update the results table."""

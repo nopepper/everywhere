@@ -2,24 +2,25 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from typing import Any, Self
 
 from ..common.pydantic import SearchQuery, SearchResult
 from ..events.watcher import FileChanged
 
 
-class SearchProviderService(ABC):
+class SearchProvider(ABC):
     """Search provider service."""
 
     @abstractmethod
-    def start(self) -> None:
+    def __enter__(self) -> Self:
         """Start the search provider."""
 
     @abstractmethod
-    def stop(self) -> None:
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         """Stop the search provider."""
 
     @abstractmethod
-    def handle_file_change(self, event: FileChanged) -> None:
+    def update_index(self, event: FileChanged) -> None:
         """Handle a file changed event."""
 
     @abstractmethod

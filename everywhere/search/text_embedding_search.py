@@ -3,6 +3,7 @@
 import threading
 from itertools import groupby
 from pathlib import Path
+from typing import Any, Self
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -14,13 +15,13 @@ from ..events.app import UserSearched
 from ..events.search_provider import GotSearchResult, IndexingFinished, IndexingStarted
 from ..events.watcher import ChangeType, FileChanged
 from ..index.ann import ANNIndex
-from .search_provider import SearchProviderService
+from .search_provider import SearchProvider
 from .text.chunking import TextChunker
 from .text.onnx_embedder import ONNXEmbedder
 from .text.parsing import TextParser
 
 
-class EmbeddingSearchProvider(BaseModel, SearchProviderService):
+class EmbeddingSearchProvider(BaseModel, SearchProvider):
     """ONNX Text Embedder."""
 
     embedder: ONNXEmbedder = Field(default_factory=ONNXEmbedder)
@@ -32,16 +33,17 @@ class EmbeddingSearchProvider(BaseModel, SearchProviderService):
         default_factory=lambda: app_dirs.app_cache_dir / "text_ann", description="Path to the ANN cache directory."
     )
 
-    def start(self) -> None:
+    def __enter__(self) -> Self:
         """Post init."""
         test_emb = self.embedder.embed(["test"])
         self._index = ANNIndex(dims=test_emb.shape[-1], cache_dir=self.ann_cache_dir).start_eventful()
         self._idle = threading.Event()
         self._idle.set()
-        add_callback(FileChanged, self.handle_file_change)
+        add_callback(FileChanged, self.update_index)
         add_callback(UserSearched, self.on_user_searched, skip_old=True)
+        return self
 
-    def stop(self) -> None:
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         """Stop the search provider."""
         self._idle.set()
         self._index.save()
@@ -51,7 +53,7 @@ class EmbeddingSearchProvider(BaseModel, SearchProviderService):
         for result in self.search(SearchQuery(text=event.query)):
             publish(GotSearchResult(query=event.query, result=result))
 
-    def handle_file_change(self, event: FileChanged) -> None:
+    def update_index(self, event: FileChanged) -> None:
         """Handle a change event."""
         publish(IndexingStarted(path=event.path))
         try:
