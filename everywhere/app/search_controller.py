@@ -8,7 +8,7 @@ from more_itertools import flatten
 
 from ..common.pydantic import SearchQuery, SearchResult
 from ..events import publish
-from ..events.search_provder import GotIndexingRequest, IndexingFinished, IndexingStarted
+from ..events.search_provider import GotIndexingRequest, IndexingFinished, IndexingStarted
 from ..index.fs_index import FSIndex
 from ..search.search_provider import SearchProviderService
 

@@ -11,7 +11,7 @@ from ..common.app import app_dirs
 from ..common.pydantic import SearchQuery, SearchResult
 from ..events import add_callback, publish
 from ..events.app import UserSearched
-from ..events.search_provder import GotSearchResult, IndexingFinished, IndexingStarted
+from ..events.search_provider import GotSearchResult, IndexingFinished, IndexingStarted
 from ..events.watcher import ChangeType, FileChanged
 from ..index.ann import ANNIndex
 from .search_provider import SearchProviderService

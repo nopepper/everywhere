@@ -7,7 +7,7 @@ from textual.message import Message
 from textual.widgets import Input, Static
 
 from ...events import add_callback
-from ...events.search_provder import IndexingFinished
+from ...events.search_provider import IndexingFinished
 
 
 class SearchBar(Static):

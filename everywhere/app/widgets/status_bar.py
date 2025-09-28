@@ -9,7 +9,7 @@ from textual.widgets import Label, ProgressBar
 from ...common.debounce import DebouncedRunner
 from ...events import add_callback
 from ...events.ann import IndexSaveFinished, IndexSaveStarted
-from ...events.search_provder import GotIndexingRequest, IndexingFinished
+from ...events.search_provider import GotIndexingRequest, IndexingFinished
 
 DEBOUNCE_LATENCY = 0.1
 
