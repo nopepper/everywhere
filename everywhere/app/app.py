@@ -105,8 +105,8 @@ class EverywhereApp(App):
 
     async def on_mount(self) -> None:
         """Set up the app when mounted."""
-        # If no paths are configured, prompt the user to select some until they do
-        if len(self.controller.indexed_paths) == 0:
+        self.selected_directories = self._config.selected_directories
+        if len(self.selected_directories) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
 
@@ -139,7 +139,7 @@ class EverywhereApp(App):
         selected = await worker.wait()  # returns the dismissal value
         if not selected and len(current_paths) == 0:
             self.action_select_directories()
-        else:
+        elif selected:
             self.selected_directories = list(selected)
 
     def watch_selected_directories(self, old: list[Path], new: list[Path]) -> None:

@@ -1,6 +1,5 @@
 """ONNX-based text search provider."""
 
-import threading
 from itertools import groupby
 from pathlib import Path
 from typing import Any, Self
@@ -10,9 +9,8 @@ from pydantic import BaseModel, Field
 
 from ..common.app import app_dirs
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events import add_callback, publish
-from ..events.app import UserSearched
-from ..events.search_provider import GotSearchResult, IndexingFinished, IndexingStarted
+from ..events import publish
+from ..events.search_provider import IndexingFinished, IndexingStarted
 from ..events.watcher import ChangeType, FileChanged
 from ..index.ann import ANNIndex
 from .search_provider import SearchProvider
@@ -36,22 +34,12 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
     def __enter__(self) -> Self:
         """Post init."""
         test_emb = self.embedder.embed(["test"])
-        self._index = ANNIndex(dims=test_emb.shape[-1], cache_dir=self.ann_cache_dir).start_eventful()
-        self._idle = threading.Event()
-        self._idle.set()
-        add_callback(FileChanged, self.update_index)
-        add_callback(UserSearched, self.on_user_searched, skip_old=True)
+        self._index = ANNIndex(dims=test_emb.shape[-1], cache_dir=self.ann_cache_dir)
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         """Stop the search provider."""
-        self._idle.set()
         self._index.save()
-
-    def on_user_searched(self, event: UserSearched) -> None:
-        """Handle a user searched event."""
-        for result in self.search(SearchQuery(text=event.query)):
-            publish(GotSearchResult(query=event.query, result=result))
 
     def update_index(self, event: FileChanged) -> None:
         """Handle a change event."""
@@ -59,6 +47,7 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
         try:
             result = self._on_file_changed(event)
         except Exception:
+            # TODO log error
             result = False
         finally:
             publish(IndexingFinished(path=event.path, success=result))
@@ -79,7 +68,6 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
             return False
 
         for chunk in text_chunks:
-            self._idle.wait()
             emb = self.embedder.embed([chunk])[0]
             emb = emb / np.linalg.norm(emb)
             self._index.add(path, emb)
@@ -87,7 +75,6 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
-        self._idle.clear()
         results: list[SearchResult] = []
         if len(query.text) == 0:
             return []
@@ -101,10 +88,7 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
 
         results_filtered: list[SearchResult] = []
         for path, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
-            chunk_score = np.mean([x.confidence for x in group]).item()
-            # num_chunks = len(self._index._index_helper._ids_by_path[path.as_posix()])
-            doc_score = chunk_score  # / math.log(1 + 0.1 * num_chunks)
+            doc_score = np.mean([x.confidence for x in group]).item()
             results_filtered.append(SearchResult(value=path, confidence=doc_score))
 
-        self._idle.set()
         return results_filtered
