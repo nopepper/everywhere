@@ -9,7 +9,6 @@ from pathlib import Path
 from more_itertools import flatten
 
 from ..common.app import app_dirs
-from ..events.watcher import ChangeType, FileChanged
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,10 +42,13 @@ class FSIndex:
         """Indexed directories."""
         return remove_children([p.path for p in self._state])
 
-    def update_fs_paths(self, directories: list[Path]) -> Iterable[FileChanged]:
+    def compute_diff(self, directories: list[Path]) -> tuple[set[PathMeta], set[PathMeta]]:
         """Restart the watcher with new paths."""
         directories = list(set(directories))
-        new_state: set[PathMeta] = set()
+
+        paths_new: set[Path] = set()
+        upserted: set[PathMeta] = set()
+        removed: set[PathMeta] = set()
 
         for p in self.walk_all(directories):
             try:
@@ -54,16 +56,23 @@ class FSIndex:
             except Exception:
                 # TODO log error
                 continue
-            new_state.add(p_meta)
+            paths_new.add(p)
             if p_meta not in self._state:
-                yield FileChanged(path=p, event_type=ChangeType.UPSERT)
+                upserted.add(p_meta)
 
-        old_files = {p.path for p in self._state}
-        new_files = {p.path for p in new_state}
-        removed_paths = old_files - new_files
-        for p in removed_paths:
-            yield FileChanged(path=p, event_type=ChangeType.REMOVE)
-        self._state = new_state
+        for p_meta in self._state:
+            if p_meta.path not in paths_new:
+                removed.add(p_meta)
+
+        return upserted, removed
+
+    def add(self, meta: PathMeta) -> None:
+        """Commit an add operation."""
+        self._state.add(meta)
+
+    def remove(self, meta: PathMeta) -> None:
+        """Commit a remove operation."""
+        self._state.remove(meta)
 
     def save(self) -> None:
         """Save the index."""

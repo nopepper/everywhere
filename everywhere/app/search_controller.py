@@ -1,5 +1,6 @@
 """Search orchestrator."""
 
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from itertools import groupby
 from pathlib import Path
@@ -9,9 +10,8 @@ import numpy as np
 from more_itertools import flatten
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events import publish
-from ..events.search_provider import GotIndexingRequest, IndexingFinished, IndexingStarted
-from ..index.fs_index import FSIndex
+from ..events.watcher import ChangeType, FileChanged
+from ..index.fs_index import FSIndex, PathMeta
 from ..search.search_provider import SearchProvider
 
 
@@ -47,6 +47,15 @@ class SearchController:
         self.search_providers = search_providers
         self.fs_watcher = fs_index
         self._stack = ExitStack()
+        self._indexing_tasks: list[Future] = []
+        self._executor = ThreadPoolExecutor(max_workers=1)
+
+    @property
+    def indexing_progress(self) -> tuple[int, int]:
+        """Indexing progress."""
+        total = len(self._indexing_tasks)
+        finished = sum(1 for task in self._indexing_tasks if task.done())
+        return total, finished
 
     @property
     def indexed_paths(self) -> list[Path]:
@@ -56,7 +65,6 @@ class SearchController:
     def __enter__(self) -> Self:
         """Start the search provider."""
         self.search_providers = [self._stack.enter_context(provider) for provider in self.search_providers]
-        self.update_selected_paths(self.indexed_paths)
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
@@ -64,20 +72,28 @@ class SearchController:
         self.fs_watcher.save()
         self._stack.close()
 
+    def _handle_change(self, meta: PathMeta, removed: bool) -> None:
+        """Handle a change."""
+        event = FileChanged(path=meta.path, event_type=ChangeType.REMOVE if removed else ChangeType.UPSERT)
+        for provider in self.search_providers:
+            provider.update_index(event)
+        if removed:
+            self.fs_watcher.remove(meta)
+        else:
+            self.fs_watcher.add(meta)
+
     def update_selected_paths(self, directories: list[Path]) -> None:
         """Update the selected paths."""
-        changes = []
-        for change in self.fs_watcher.update_fs_paths(directories):
-            publish(GotIndexingRequest(path=change.path))
-            changes.append(change)
-
-        for change in changes:
-            for provider in self.search_providers:
-                publish(IndexingStarted(path=change.path))
-                provider.update_index(change)
-                publish(IndexingFinished(path=change.path, success=True))
+        for task in self._indexing_tasks:
+            task.cancel()
+        wait(self._indexing_tasks)
+        upserted, removed = self.fs_watcher.compute_diff(directories)
+        remove_tasks = [self._executor.submit(self._handle_change, meta, True) for meta in removed]
+        upsert_tasks = [self._executor.submit(self._handle_change, meta, False) for meta in upserted]
+        self._indexing_tasks = upsert_tasks + remove_tasks
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
-        results = list(flatten([provider.search(query) for provider in self.search_providers]))
+        results_nested = [provider.search(query) for provider in self.search_providers]
+        results = list(flatten(results_nested))
         return normalize_results(results)

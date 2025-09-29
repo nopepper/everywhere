@@ -1,9 +1,8 @@
 """Application entry point."""
 
-import threading
 from functools import partial
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -15,7 +14,7 @@ from everywhere.app.app_config import AppConfig
 from everywhere.common.pydantic import SearchQuery
 from everywhere.events import publish
 
-from ..common.debounce import DebouncedRunner
+from ..common.debounce import AsyncDebouncedRunner
 from ..events.app import AppResized
 from .commands.directory_index import DirectoryIndexCommand
 from .screens.directory_selector import DirectorySelector
@@ -23,6 +22,9 @@ from .search_controller import SearchController
 from .widgets.results_table import ResultsTable
 from .widgets.search_bar import SearchBar
 from .widgets.status_bar import StatusBar
+
+if TYPE_CHECKING:
+    from textual.worker import Worker
 
 DEBOUNCE_LATENCY = 0.1
 
@@ -94,7 +96,8 @@ class EverywhereApp(App):
         super().__init__()
         self._config = config
         self.controller = controller
-        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
+        self._search_debounced = AsyncDebouncedRunner(DEBOUNCE_LATENCY)
+        self._indexing_task: Worker | None = None
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -103,14 +106,27 @@ class EverywhereApp(App):
         yield ResultsTable()
         yield StatusBar()
 
+    def _update_status_bar(self) -> None:
+        status_bar = self.query_one(StatusBar)
+        total, finished = self.controller.indexing_progress
+        status_bar.total_tasks = total
+        status_bar.finished_tasks = finished
+        self.call_next(status_bar.refresh_progress)
+
     async def on_mount(self) -> None:
         """Set up the app when mounted."""
         self.selected_directories = self._config.selected_directories
         if len(self.selected_directories) == 0:
             self.notify("Please select directories to index")
             self.action_select_directories()
+        self.indexing_timer = self.set_interval(0.2, self._update_status_bar, pause=False)
 
-    def search_and_update(self, query: str) -> None:
+    def on_unmount(self) -> None:
+        """Clean up the app when unmounted."""
+        if self._indexing_task:
+            self._indexing_task.cancel()
+
+    async def search_and_update(self, query: str) -> None:
         """Search and update the results table."""
         results = self.controller.search(SearchQuery(text=query))
         with self.batch_update():
@@ -144,7 +160,11 @@ class EverywhereApp(App):
 
     def watch_selected_directories(self, old: list[Path], new: list[Path]) -> None:
         """Update the selected directories."""
-        threading.Thread(target=self.controller.update_selected_paths, args=(new,), daemon=True).start()
+        if old == new or len(new) == 0:
+            return
+        if self._indexing_task:
+            self._indexing_task.cancel()
+        self._indexing_task = self.run_worker(partial(self.controller.update_selected_paths, new), thread=True)
 
     def action_close_app(self) -> None:
         """Close the application."""

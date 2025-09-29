@@ -6,11 +6,6 @@ from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import Label, ProgressBar
 
-from ...common.debounce import DebouncedRunner
-from ...events import add_callback
-from ...events.ann import IndexSaveFinished, IndexSaveStarted
-from ...events.search_provider import GotIndexingRequest, IndexingFinished
-
 DEBOUNCE_LATENCY = 0.1
 
 
@@ -31,7 +26,6 @@ class StatusBar(Horizontal):
         self.status_text = Label("", id="status_text")
         self.total_tasks = 0
         self.finished_tasks = 0
-        self._debounced = DebouncedRunner(DEBOUNCE_LATENCY)
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -40,28 +34,11 @@ class StatusBar(Horizontal):
         yield self.spacer
         yield self.status_text
 
-    def on_mount(self) -> None:
-        """Set up the status bar when mounted."""
-        add_callback(GotIndexingRequest, self._increment_tasks)
-        add_callback(IndexSaveStarted, self._increment_tasks)
-        add_callback(IndexingFinished, self._decrement_tasks)
-        add_callback(IndexSaveFinished, self._decrement_tasks)
-
     def set_progress_visibility(self, display: bool) -> None:
         """Set the progress bar visibility."""
         self.progress_bar.display = display
         self.warning_text.display = display
         self.spacer.display = not display
-
-    def _increment_tasks(self, event: GotIndexingRequest | IndexSaveStarted) -> None:
-        """Increment tasks."""
-        self.total_tasks += 1
-        self._debounced.submit(self.refresh_progress)
-
-    def _decrement_tasks(self, event: IndexingFinished | IndexSaveFinished) -> None:
-        """Decrement tasks."""
-        self.finished_tasks += 1
-        self._debounced.submit(self.refresh_progress)
 
     def refresh_progress(self) -> None:
         """Refresh the status bar."""
