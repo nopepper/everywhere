@@ -53,12 +53,12 @@ The project takes inspiration from [Everything](https://www.voidtools.com/suppor
 
 | File type | Full-text | Semantic Text | OCR | Semantic Image |
 |-----------|------------------|---------------|-----|----------------|
-| `txt` | ⏳ | ✅ | - | - |
-| `md` | ⏳ | ✅ | - | - |
-| `pdf` | ⏳ | ✅ | ✅ | ⏳ |
-| `docx` | ⏳ | ✅ | ❌ | ❌ |
-| `pptx` | ⏳ | ✅ | ❌ | ❌ |
-| `epub` | ⏳ | ✅ | ❌ | ❌ |
+| `txt` | ✅ | ✅ | - | - |
+| `md` | ✅ | ✅ | - | - |
+| `pdf` | ✅ | ✅ | ✅ | ⏳ |
+| `docx` | ✅ | ✅ | ❌ | ❌ |
+| `pptx` | ✅ | ✅ | ❌ | ❌ |
+| `epub` | ✅ | ✅ | ❌ | ❌ |
 | `jpg` | - | - | ⏳ | ⏳ |
 | `png` | - | - | ⏳ | ⏳ |
 
@@ -75,7 +75,7 @@ uv run everywhere
 ## Roadmap
 
 - [ ] Add more search providers
-  - [ ] Full-text indexing
+  - [x] Full-text indexing (Tantivy)
   - [x] PDF search (text only)
   - [x] PDF search (OCR)
   - [x] Word document search (text only)

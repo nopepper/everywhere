@@ -153,7 +153,8 @@ class DocumentIndex:
         for path, doc in list(self._documents.items()):
             if path not in paths_new:
                 removed.append(doc)
-                self._documents.pop(path)
+                # Note: Don't remove from _documents here, let the controller handle it
+                # This allows proper cleanup through search providers
 
         return upserted, removed
 

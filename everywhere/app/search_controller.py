@@ -78,6 +78,10 @@ class SearchController:
     def _handle_document(self, doc: IndexedDocument, removed: bool) -> None:
         """Handle document indexing or removal."""
         if removed:
+            # Remove from all search providers
+            for provider in self.search_providers:
+                provider.remove_document(doc.path)
+            # Remove from document index
             self.doc_index.remove(doc.path)
             return
 

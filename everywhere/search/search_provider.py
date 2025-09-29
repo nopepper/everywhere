@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, Self
 
 from ..common.pydantic import SearchQuery, SearchResult
@@ -27,6 +28,10 @@ class SearchProvider(ABC):
     @abstractmethod
     def index_document(self, doc: IndexedDocument) -> bool:
         """Index or update a document. Return True if successful."""
+
+    @abstractmethod
+    def remove_document(self, path: Path) -> bool:
+        """Remove a document from the index. Return True if successful."""
 
     @abstractmethod
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:

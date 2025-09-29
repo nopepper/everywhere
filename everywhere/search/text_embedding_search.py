@@ -66,6 +66,10 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
         finally:
             publish(IndexingFinished(path=doc.path, success=True))
 
+    def remove_document(self, path: Path) -> bool:
+        """Remove a document from the embedding index."""
+        return self._index.remove(path)
+
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
         results: list[SearchResult] = []
