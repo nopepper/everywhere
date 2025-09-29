@@ -49,6 +49,7 @@ class TantivySearchProvider(BaseModel, SearchProvider):
         """Close the search provider."""
         if hasattr(self, "_writer"):
             self._writer.commit()
+            del self._writer
 
     def index_document(self, doc: IndexedDocument) -> bool:
         """Index a document in Tantivy."""
