@@ -33,11 +33,11 @@ class EventBus:
         """Initialize the event bus."""
         self._events = deque(maxlen=history_size)
         self._lock = threading.Lock()
-        self._ping = threading.Condition()
+        self._ping = threading.Condition(self._lock)
 
     def submit_event(self, event: Event) -> None:
         """Submit an event to the event bus."""
-        with self._lock, self._ping:
+        with self._ping:
             self._events.append(event)
             self._ping.notify_all()
 
@@ -46,20 +46,20 @@ class EventBus:
     ) -> list[Event]:
         """Get events from the event bus."""
         result = []
-        with self._lock:
-            if len(self._events) == 0:
-                return []
-            for i in range(len(self._events), 0, -1):
-                ev = self._events[i - 1]
-                time_ok = after_t is None or ev.event_t > after_t
-                type_ok = event_type is None or isinstance(ev, event_type)
-                if time_ok:
-                    if type_ok:
-                        result.append(ev)
-                        if limit is not None and len(result) >= limit:
-                            break
-                else:
-                    break
+        # deque iteration is atomic and creates implicit snapshot
+        if len(self._events) == 0:
+            return []
+        for i in range(len(self._events), 0, -1):
+            ev = self._events[i - 1]
+            time_ok = after_t is None or ev.event_t > after_t
+            type_ok = event_type is None or isinstance(ev, event_type)
+            if time_ok:
+                if type_ok:
+                    result.append(ev)
+                    if limit is not None and len(result) >= limit:
+                        break
+            else:
+                break
         return result[::-1]
 
     def wait_for_event(self, event_type: type[Event] | None = None) -> None:
@@ -68,9 +68,8 @@ class EventBus:
             with self._ping:
                 self._ping.wait()
             if event_type is not None:
-                with self._lock:
-                    if isinstance(self._events[-1], event_type):
-                        break
+                if len(self._events) > 0 and isinstance(self._events[-1], event_type):
+                    break
             else:
                 break
 

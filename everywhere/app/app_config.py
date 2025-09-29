@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from everywhere.index.fs_index import FSIndex
+from everywhere.index.document_index import DocumentIndex
 
 from ..search.text_embedding_search import EmbeddingSearchProvider
 from .search_controller import SearchController
@@ -20,6 +20,6 @@ class AppConfig(BaseModel):
 def build_controller(config: AppConfig) -> SearchController:
     """Build the search controller."""
     supported_filetypes = config.embedding_search.parser.supported_types
-    index = FSIndex(path_filter=lambda p: p.suffix.strip(".") in supported_filetypes)
+    doc_index = DocumentIndex(path_filter=lambda p: p.suffix.strip(".") in supported_filetypes)
 
-    return SearchController(search_providers=[config.embedding_search], fs_index=index)
+    return SearchController(search_providers=[config.embedding_search], doc_index=doc_index)

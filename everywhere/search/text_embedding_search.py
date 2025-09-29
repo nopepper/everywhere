@@ -11,8 +11,8 @@ from ..common.app import app_dirs
 from ..common.pydantic import SearchQuery, SearchResult
 from ..events import publish
 from ..events.search_provider import IndexingFinished, IndexingStarted
-from ..events.watcher import ChangeType, FileChanged
 from ..index.ann import ANNIndex
+from ..index.document_index import IndexedDocument
 from .search_provider import SearchProvider
 from .text.chunking import TextChunker
 from .text.onnx_embedder import ONNXEmbedder
@@ -41,37 +41,30 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
         """Stop the search provider."""
         self._index.save()
 
-    def update_index(self, event: FileChanged) -> None:
-        """Handle a change event."""
-        publish(IndexingStarted(path=event.path))
+    def index_document(self, doc: IndexedDocument) -> bool:
+        """Index a document."""
+        publish(IndexingStarted(path=doc.path))
         try:
-            result = self._on_file_changed(event)
+            if doc.parsed_text:
+                text_chunks = self.chunker.chunk(doc.parsed_text)
+            else:
+                parsed_text = self.parser.parse(doc.path)
+                text_chunks = self.chunker.chunk(parsed_text)
+                doc.parsed_text = parsed_text
+
+            if not text_chunks:
+                return False
+
+            for chunk in text_chunks:
+                emb = self.embedder.embed([chunk])[0]
+                emb = emb / np.linalg.norm(emb)
+                self._index.add(doc.path, emb)
+
+            return True
         except Exception:
-            # TODO log error
-            result = False
+            return False
         finally:
-            publish(IndexingFinished(path=event.path, success=result))
-
-    def _on_file_changed(self, event: FileChanged) -> bool:
-        """Handle a change event."""
-        path = event.path
-
-        if path in self._index:
-            return False
-
-        if not path.exists() or event.event_type == ChangeType.REMOVE:
-            return self._index.remove(path)
-
-        text_chunks = self.chunker.chunk(self.parser.parse(path))
-
-        if not text_chunks:
-            return False
-
-        for chunk in text_chunks:
-            emb = self.embedder.embed([chunk])[0]
-            emb = emb / np.linalg.norm(emb)
-            self._index.add(path, emb)
-        return True
+            publish(IndexingFinished(path=doc.path, success=True))
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""

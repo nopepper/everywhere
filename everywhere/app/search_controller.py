@@ -10,8 +10,7 @@ import numpy as np
 from more_itertools import flatten
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events.watcher import ChangeType, FileChanged
-from ..index.fs_index import FSIndex, PathMeta
+from ..index.document_index import DocumentIndex, IndexedDocument
 from ..search.search_provider import SearchProvider
 
 
@@ -42,13 +41,16 @@ def normalize_results(results: list[SearchResult]) -> list[SearchResult]:
 class SearchController:
     """Search orchestrator service."""
 
-    def __init__(self, search_providers: list[SearchProvider], fs_index: FSIndex):
+    def __init__(self, search_providers: list[SearchProvider], doc_index: DocumentIndex):
         """Initialize the search controller."""
         self.search_providers = search_providers
-        self.fs_watcher = fs_index
+        self.doc_index = doc_index
         self._stack = ExitStack()
         self._indexing_tasks: list[Future] = []
         self._executor = ThreadPoolExecutor(max_workers=1)
+
+        for provider in search_providers:
+            doc_index.register_provider(provider.provider_id)
 
     @property
     def indexing_progress(self) -> tuple[int, int]:
@@ -60,7 +62,7 @@ class SearchController:
     @property
     def indexed_paths(self) -> list[Path]:
         """Indexed paths."""
-        return self.fs_watcher.indexed_directories
+        return self.doc_index.indexed_directories
 
     def __enter__(self) -> Self:
         """Start the search provider."""
@@ -69,27 +71,30 @@ class SearchController:
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         """Stop the search provider."""
-        self.fs_watcher.save()
+        self.doc_index.save()
+        self._executor.shutdown(wait=False)
         self._stack.close()
 
-    def _handle_change(self, meta: PathMeta, removed: bool) -> None:
-        """Handle a change."""
-        event = FileChanged(path=meta.path, event_type=ChangeType.REMOVE if removed else ChangeType.UPSERT)
-        for provider in self.search_providers:
-            provider.update_index(event)
+    def _handle_document(self, doc: IndexedDocument, removed: bool) -> None:
+        """Handle document indexing or removal."""
         if removed:
-            self.fs_watcher.remove(meta)
-        else:
-            self.fs_watcher.add(meta)
+            self.doc_index.remove(doc.path)
+            return
+
+        for provider in self.search_providers:
+            if not doc.is_indexed_by(provider.provider_id):
+                success = provider.index_document(doc)
+                if success:
+                    doc.mark_indexed_by(provider.provider_id)
 
     def update_selected_paths(self, directories: list[Path]) -> None:
         """Update the selected paths."""
         for task in self._indexing_tasks:
             task.cancel()
         wait(self._indexing_tasks)
-        upserted, removed = self.fs_watcher.compute_diff(directories)
-        remove_tasks = [self._executor.submit(self._handle_change, meta, True) for meta in removed]
-        upsert_tasks = [self._executor.submit(self._handle_change, meta, False) for meta in upserted]
+        upserted, removed = self.doc_index.compute_diff(directories)
+        remove_tasks = [self._executor.submit(self._handle_document, doc, True) for doc in removed]
+        upsert_tasks = [self._executor.submit(self._handle_document, doc, False) for doc in upserted]
         self._indexing_tasks = upsert_tasks + remove_tasks
 
     def search(self, query: SearchQuery) -> list[SearchResult]:

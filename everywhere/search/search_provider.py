@@ -5,11 +5,16 @@ from collections.abc import Iterable
 from typing import Any, Self
 
 from ..common.pydantic import SearchQuery, SearchResult
-from ..events.watcher import FileChanged
+from ..index.document_index import IndexedDocument
 
 
 class SearchProvider(ABC):
     """Search provider service."""
+
+    @property
+    def provider_id(self) -> str:
+        """Unique identifier for this provider."""
+        return type(self).__name__
 
     @abstractmethod
     def __enter__(self) -> Self:
@@ -20,8 +25,8 @@ class SearchProvider(ABC):
         """Stop the search provider."""
 
     @abstractmethod
-    def update_index(self, event: FileChanged) -> None:
-        """Handle a file changed event."""
+    def index_document(self, doc: IndexedDocument) -> bool:
+        """Index or update a document. Return True if successful."""
 
     @abstractmethod
     def search(self, query: SearchQuery) -> Iterable[SearchResult]:
