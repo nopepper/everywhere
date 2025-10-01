@@ -27,37 +27,31 @@ def normalize_scores(scores: list[float]) -> list[float]:
     return normalized.tolist()
 
 
-def normalize_results(
-    results: list[SearchResult], metadata_lookup: Callable[[Path], tuple[int, int] | None]
-) -> list[SearchResult]:
-    """Normalize results."""
+def normalize_results(results: list[SearchResult]) -> list[SearchResult]:
+    """Normalize and deduplicate search results."""
+    # Deduplicate by path, keeping the highest confidence score
     results_agg: list[SearchResult] = []
     for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
         results_agg.append(max(group, key=lambda x: x.confidence))
 
+    # Normalize scores
     new_scores = normalize_scores([x.confidence for x in results_agg])
-    hydrated: list[SearchResult] = []
+
+    # Create results with normalized scores
+    normalized: list[SearchResult] = []
     for i, result in enumerate(results_agg):
-        metadata = metadata_lookup(result.value)
-        if metadata is None:
-            hydrated.append(
-                SearchResult(
-                    value=result.value,
-                    confidence=new_scores[i],
-                )
-            )
-            continue
-        size_bytes, last_modified_ns = metadata
-        hydrated.append(
+        normalized.append(
             SearchResult(
                 value=result.value,
                 confidence=new_scores[i],
-                size_bytes=size_bytes,
-                last_modified_ns=last_modified_ns,
+                size_bytes=result.size_bytes,
+                last_modified_ns=result.last_modified_ns,
             )
         )
-    hydrated.sort(key=lambda x: x.confidence, reverse=True)
-    return hydrated
+
+    # Sort by confidence descending
+    normalized.sort(key=lambda x: x.confidence, reverse=True)
+    return normalized
 
 
 class SearchController:
@@ -174,4 +168,22 @@ class SearchController:
         """Search for a query."""
         results_nested = [provider.search(query) for provider in self.search_providers]
         results = list(flatten(results_nested))
-        return normalize_results(results, self.doc_index.get_metadata)
+
+        # Hydrate results with metadata from the index
+        hydrated_results: list[SearchResult] = []
+        for result in results:
+            metadata = self.doc_index.get_metadata(result.value)
+            if metadata is not None:
+                size_bytes, last_modified_ns = metadata
+                hydrated_results.append(
+                    SearchResult(
+                        value=result.value,
+                        confidence=result.confidence,
+                        size_bytes=size_bytes,
+                        last_modified_ns=last_modified_ns,
+                    )
+                )
+            else:
+                hydrated_results.append(result)
+
+        return normalize_results(hydrated_results)
