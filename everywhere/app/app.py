@@ -2,7 +2,7 @@
 
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -10,6 +10,7 @@ from textual.binding import Binding
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Header
+from textual.worker import WorkerCancelled
 
 from everywhere.app.app_config import AppConfig
 from everywhere.common.pydantic import SearchQuery, SearchResult
@@ -23,9 +24,6 @@ from .search_controller import SearchController
 from .widgets.results_table import ResultsTable
 from .widgets.search_bar import SearchBar
 from .widgets.status_bar import StatusBar
-
-if TYPE_CHECKING:
-    from textual.worker import Worker
 
 DEBOUNCE_LATENCY = 0.1
 
@@ -104,7 +102,6 @@ class EverywhereApp(App):
         self._config = config
         self.controller = controller
         self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
-        self._indexing_task: Worker | None = None
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -127,11 +124,6 @@ class EverywhereApp(App):
             self.notify("Please select directories to index")
             self.action_select_directories()
         self.indexing_timer = self.set_interval(0.2, self._update_status_bar, pause=False)
-
-    def on_unmount(self) -> None:
-        """Clean up the app when unmounted."""
-        if self._indexing_task:
-            self._indexing_task.cancel()
 
     @work(thread=True, exclusive=True)
     async def _launch_search(self, query: str) -> None:
@@ -163,8 +155,11 @@ class EverywhereApp(App):
         if isinstance(current_paths, Path):
             current_paths = [current_paths]
 
-        worker = self.run_worker(self.push_screen_wait(DirectorySelector(initial_paths=current_paths)))
-        selected = await worker.wait()  # returns the dismissal value
+        try:
+            selected = await self.push_screen_wait(DirectorySelector(initial_paths=current_paths))
+        except WorkerCancelled:
+            return
+
         if not selected and len(current_paths) == 0:
             self.action_select_directories()
         elif selected:
@@ -174,7 +169,11 @@ class EverywhereApp(App):
         """Update the selected directories."""
         if old == new or len(new) == 0:
             return
-        self.run_worker(partial(self.controller.update_selected_paths, new), thread=True)
+        self.run_worker(
+            partial(self.controller.update_selected_paths, new),
+            thread=True,
+            exclusive=True,
+        )
 
     def action_close_app(self) -> None:
         """Close the application."""

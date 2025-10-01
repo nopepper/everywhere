@@ -1,7 +1,7 @@
 """Search orchestrator."""
 
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import groupby
 from pathlib import Path
@@ -121,18 +121,14 @@ class SearchController:
 
     def update_selected_paths(self, directories: list[Path]) -> None:
         """Update the selected paths by walking directories and reconciling with index."""
-        # Cancel existing tasks
-        for task in self._indexing_tasks:
-            task.cancel()
-        wait(self._indexing_tasks)
-        self._indexing_tasks = []
+        # Cancel existing tasks and keep the ones that are not done
+        self._indexing_tasks = [t for t in self._indexing_tasks if not t.cancel()]
 
         # Get all paths currently in the database
         indexed_paths = self.doc_index.get_all_paths()
 
         # Walk filesystem to get current state
         filesystem_paths: set[Path] = set()
-        tasks: list[Future] = []
 
         for path in walk_all_files(directories, self.path_filter):
             try:
@@ -148,7 +144,7 @@ class SearchController:
                 for last_modified, size, provider_id in existing_rows:
                     if last_modified != current_mtime or size != current_size:
                         # Stale entry - schedule removal
-                        tasks.append(self._executor.submit(self._remove_document, path, provider_id))
+                        self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
 
                 # Check if each provider needs to index this file
                 for provider in self.search_providers:
@@ -159,7 +155,9 @@ class SearchController:
                             last_modified=current_mtime,
                             size=current_size,
                         )
-                        tasks.append(self._executor.submit(self._index_document, doc, provider.provider_id))
+                        self._indexing_tasks.append(
+                            self._executor.submit(self._index_document, doc, provider.provider_id)
+                        )
 
             except (OSError, FileNotFoundError):
                 continue
@@ -170,9 +168,7 @@ class SearchController:
                 # Get all providers that have this path indexed
                 existing_rows = self.doc_index.get_rows_for_path(path)
                 for _, _, provider_id in existing_rows:
-                    tasks.append(self._executor.submit(self._remove_document, path, provider_id))
-
-        self._indexing_tasks = tasks
+                    self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
