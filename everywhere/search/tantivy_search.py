@@ -58,12 +58,8 @@ class TantivySearchProvider(BaseModel, SearchProvider):
 
         try:
             # Parse text from document
-            if doc.parsed_text:
-                text_content = " ".join(doc.parsed_text)
-            else:
-                parsed_text = self.parser.parse(doc.path)
-                text_content = " ".join(parsed_text)
-                doc.parsed_text = parsed_text
+            parsed_text = self.parser.parse(doc.path)
+            text_content = " ".join(parsed_text)
 
             if not text_content.strip():
                 return False

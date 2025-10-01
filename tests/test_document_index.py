@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from everywhere.index.document_index import DocumentIndex, IndexedDocument
+from everywhere.index.document_index import DocumentIndex, IndexedDocument, walk_all_files
 
 
 class TestDocumentIndex:
@@ -13,10 +13,7 @@ class TestDocumentIndex:
     @pytest.fixture
     def doc_index(self, temp_workspace: Path) -> DocumentIndex:
         """Doc index fixture."""
-        return DocumentIndex(
-            state_path=temp_workspace / "index.pkl",
-            path_filter=lambda p: p.suffix in {".txt", ".md"},
-        )
+        return DocumentIndex(db_path=temp_workspace / "index.db")
 
     @pytest.fixture
     def sample_files(self, temp_workspace: Path) -> tuple[Path, Path, Path]:
@@ -35,205 +32,170 @@ class TestDocumentIndex:
 
         return file1, file2, file3
 
-    def test_get_or_create_new_document(self, doc_index: DocumentIndex, temp_workspace: Path):
-        """Get or create new document."""
+    def test_add_and_query_document(self, doc_index: DocumentIndex, temp_workspace: Path):
+        """Test adding and querying documents."""
         test_file = temp_workspace / "test.txt"
         test_file.write_text("test content")
+        stat = test_file.stat()
 
-        doc = doc_index.get_or_create(test_file)
+        # Add entry for a provider
+        doc_index.add(test_file, stat.st_mtime, stat.st_size, "provider_a")
 
-        assert doc.path == test_file
-        assert doc.last_modified > 0
-        assert doc.size > 0
+        # Query rows for this path
+        rows = doc_index.get_rows_for_path(test_file)
+        assert len(rows) == 1
+        assert rows[0] == (stat.st_mtime, stat.st_size, "provider_a")
 
-    def test_get_returns_none_for_nonexistent(self, doc_index: DocumentIndex, temp_workspace: Path):
-        """Get returns none for nonexistent."""
-        nonexistent = temp_workspace / "nonexistent.txt"
-        doc = doc_index.get(nonexistent)
-        assert doc is None
-
-    def test_get_returns_cached_document(self, doc_index: DocumentIndex, temp_workspace: Path):
-        """Get returns cached document."""
+    def test_has_entry_returns_correct_result(self, doc_index: DocumentIndex, temp_workspace: Path):
+        """Test has_entry method."""
         test_file = temp_workspace / "test.txt"
         test_file.write_text("test content")
+        stat = test_file.stat()
 
-        doc1 = doc_index.get_or_create(test_file)
-        doc2 = doc_index.get(test_file)
+        # Not present initially
+        assert not doc_index.has_entry(test_file, stat.st_mtime, stat.st_size, "provider_a")
 
-        assert doc1 is doc2
+        # Add it
+        doc_index.add(test_file, stat.st_mtime, stat.st_size, "provider_a")
 
-    def test_stale_detection_on_modification(self, doc_index: DocumentIndex, temp_workspace: Path):
-        """Test that modified files are detected as stale."""
-        import time
+        # Now it's present
+        assert doc_index.has_entry(test_file, stat.st_mtime, stat.st_size, "provider_a")
 
+    def test_multiple_providers_same_file(self, doc_index: DocumentIndex, temp_workspace: Path):
+        """Test multiple providers can index the same file."""
         test_file = temp_workspace / "test.txt"
-        test_file.write_text("original content")
+        test_file.write_text("test content")
+        stat = test_file.stat()
 
-        doc = doc_index.get_or_create(test_file)
-        assert not doc.is_stale()
+        doc_index.add(test_file, stat.st_mtime, stat.st_size, "provider_a")
+        doc_index.add(test_file, stat.st_mtime, stat.st_size, "provider_b")
 
-        time.sleep(0.01)
-        test_file.write_text("modified content with different size")
+        rows = doc_index.get_rows_for_path(test_file)
+        assert len(rows) == 2
+        providers = {row[2] for row in rows}
+        assert providers == {"provider_a", "provider_b"}
 
-        assert doc.is_stale()
-
-    def test_compute_diff_identifies_new_files(self, doc_index: DocumentIndex, sample_files: tuple[Path, Path, Path]):
-        """Compute diff identifies new files."""
+    def test_walk_all_files_function(self, sample_files: tuple[Path, Path, Path]):
+        """Test walk_all_files utility function."""
         file1, file2, file3 = sample_files
         directory = file1.parent
 
-        upserted, removed = doc_index.compute_diff([directory])
+        files = list(walk_all_files([directory]))
+        assert len(files) == 3
+        assert set(files) == {file1, file2, file3}
 
-        assert len(upserted) == 3
-        assert len(removed) == 0
-
-        paths = {doc.path for doc in upserted}
-        assert file1 in paths
-        assert file2 in paths
-        assert file3 in paths
-
-    def test_compute_diff_identifies_removed_files(
-        self, doc_index: DocumentIndex, sample_files: tuple[Path, Path, Path]
-    ):
-        """Compute diff identifies removed files."""
-        file1, file2, file3 = sample_files
-        directory = file1.parent
-
-        upserted, removed = doc_index.compute_diff([directory])
-        assert len(upserted) == 3
-
-        file2.unlink()
-
-        upserted, removed = doc_index.compute_diff([directory])
-
-        assert len(removed) == 1
-        assert removed[0].path == file2
-
-    def test_compute_diff_respects_filter(self, doc_index: DocumentIndex, temp_workspace: Path):
-        """Compute diff respects filter."""
+    def test_walk_all_files_respects_filter(self, temp_workspace: Path):
+        """Test that walk_all_files respects the filter."""
         directory = temp_workspace / "filtered"
         directory.mkdir()
 
         txt_file = directory / "included.txt"
         txt_file.write_text("included")
-
+        md_file = directory / "also_included.md"
+        md_file.write_text("also included")
         exe_file = directory / "excluded.exe"
         exe_file.write_text("excluded")
 
-        upserted, removed = doc_index.compute_diff([directory])
+        def path_filter(p: Path) -> bool:
+            return p.suffix in {".txt", ".md"}
 
-        paths = {doc.path for doc in upserted}
-        assert txt_file in paths
-        assert exe_file not in paths
+        files = list(walk_all_files([directory], path_filter))
 
-    def test_register_and_track_providers(self, doc_index: DocumentIndex, temp_workspace: Path):
-        """Register and track providers."""
-        doc_index.register_provider("provider_a")
-        doc_index.register_provider("provider_b")
+        assert txt_file in files
+        assert md_file in files
+        assert exe_file not in files
 
-        test_file = temp_workspace / "test.txt"
-        test_file.write_text("content")
+    def test_get_all_paths(self, doc_index: DocumentIndex, sample_files: tuple[Path, Path, Path]):
+        """Test get_all_paths returns unique paths."""
+        file1, file2, file3 = sample_files
 
-        doc = doc_index.get_or_create(test_file)
+        for f in sample_files:
+            stat = f.stat()
+            doc_index.add(f, stat.st_mtime, stat.st_size, "provider_a")
+            doc_index.add(f, stat.st_mtime, stat.st_size, "provider_b")
 
-        assert not doc.is_fully_indexed({"provider_a", "provider_b"})
-
-        doc.mark_indexed_by("provider_a")
-        assert not doc.is_fully_indexed({"provider_a", "provider_b"})
-
-        doc.mark_indexed_by("provider_b")
-        assert doc.is_fully_indexed({"provider_a", "provider_b"})
+        paths = doc_index.get_all_paths()
+        assert len(paths) == 3
+        assert paths == {file1, file2, file3}
 
     def test_persistence_across_instances(self, temp_workspace: Path):
         """Persistence across instances."""
-        state_path = temp_workspace / "index.pkl"
-
+        db_path = temp_workspace / "index.db"
         test_file = temp_workspace / "test.txt"
         test_file.write_text("content")
+        stat = test_file.stat()
 
-        doc_index1 = DocumentIndex(state_path=state_path)
-        doc1 = doc_index1.get_or_create(test_file)
-        doc1.mark_indexed_by("provider_x")
+        # First instance: add entry
+        doc_index1 = DocumentIndex(db_path=db_path)
+        doc_index1.add(test_file, stat.st_mtime, stat.st_size, "provider_x")
         doc_index1.save()
+        doc_index1.close()
 
-        doc_index2 = DocumentIndex(state_path=state_path)
-        doc2 = doc_index2.get(test_file)
+        # Second instance: should be able to read it
+        doc_index2 = DocumentIndex(db_path=db_path)
+        rows = doc_index2.get_rows_for_path(test_file)
 
-        assert doc2 is not None
-        assert doc2.path == test_file
-        assert doc2.is_indexed_by("provider_x")
+        assert len(rows) == 1
+        assert rows[0] == (stat.st_mtime, stat.st_size, "provider_x")
+        doc_index2.close()
 
     def test_remove_document(self, doc_index: DocumentIndex, temp_workspace: Path):
         """Remove document."""
         test_file = temp_workspace / "test.txt"
         test_file.write_text("content")
+        stat = test_file.stat()
 
-        doc_index.get_or_create(test_file)
-        assert doc_index.get(test_file) is not None
+        doc_index.add(test_file, stat.st_mtime, stat.st_size, "provider_a")
+        assert len(doc_index.get_rows_for_path(test_file)) == 1
 
-        removed = doc_index.remove(test_file)
-        assert removed
+        doc_index.remove(test_file, "provider_a")
 
-        assert doc_index.get(test_file) is None
+        assert len(doc_index.get_rows_for_path(test_file)) == 0
 
-    def test_indexed_directories_property(self, doc_index: DocumentIndex, sample_files: tuple[Path, Path, Path]):
-        """Indexed directories property."""
-        file1, file2, file3 = sample_files
-        directory = file1.parent
+    def test_get_all_paths_after_removal(self, doc_index: DocumentIndex, temp_workspace: Path):
+        """Test that get_all_paths reflects removals."""
+        file1 = temp_workspace / "file1.txt"
+        file2 = temp_workspace / "file2.txt"
+        file1.write_text("content1")
+        file2.write_text("content2")
 
-        doc_index.compute_diff([directory])
+        stat1, stat2 = file1.stat(), file2.stat()
+        doc_index.add(file1, stat1.st_mtime, stat1.st_size, "provider_a")
+        doc_index.add(file2, stat2.st_mtime, stat2.st_size, "provider_a")
 
-        indexed_dirs = doc_index.indexed_directories
-        assert len(indexed_dirs) > 0
+        assert len(doc_index.get_all_paths()) == 2
+
+        doc_index.remove(file1, "provider_a")
+
+        paths = doc_index.get_all_paths()
+        assert len(paths) == 1
+        assert file2 in paths
 
 
 class TestIndexedDocument:
     """Test IndexedDocument data class."""
 
-    def test_is_stale_detects_modification(self, temp_workspace: Path):
-        """Is stale detects modification."""
+    def test_indexed_document_creation(self, temp_workspace: Path):
+        """Test creating an IndexedDocument."""
         test_file = temp_workspace / "test.txt"
         test_file.write_text("original")
 
         stat = test_file.stat()
         doc = IndexedDocument(path=test_file, last_modified=stat.st_mtime, size=stat.st_size)
 
-        assert not doc.is_stale()
+        assert doc.path == test_file
+        assert doc.last_modified == stat.st_mtime
+        assert doc.size == stat.st_size
 
-        test_file.write_text("modified content")
-
-        assert doc.is_stale()
-
-    def test_is_stale_detects_deletion(self, temp_workspace: Path):
-        """Is stale detects deletion."""
+    def test_indexed_document_equality(self, temp_workspace: Path):
+        """Test IndexedDocument comparison."""
         test_file = temp_workspace / "test.txt"
         test_file.write_text("content")
 
         stat = test_file.stat()
-        doc = IndexedDocument(path=test_file, last_modified=stat.st_mtime, size=stat.st_size)
+        doc1 = IndexedDocument(path=test_file, last_modified=stat.st_mtime, size=stat.st_size)
+        doc2 = IndexedDocument(path=test_file, last_modified=stat.st_mtime, size=stat.st_size)
 
-        test_file.unlink()
-
-        assert doc.is_stale()
-
-    def test_provider_tracking(self):
-        """Provider tracking."""
-        doc = IndexedDocument(path=Path("/fake/path.txt"), last_modified=0.0, size=0)
-
-        assert not doc.is_indexed_by("provider_a")
-
-        doc.mark_indexed_by("provider_a")
-        assert doc.is_indexed_by("provider_a")
-
-        doc.mark_indexed_by("provider_b")
-        assert doc.is_indexed_by("provider_a")
-        assert doc.is_indexed_by("provider_b")
-
-    def test_parsed_text_caching(self):
-        """Parsed text caching."""
-        doc = IndexedDocument(path=Path("/fake/path.txt"), last_modified=0.0, size=0)
-
-        assert doc.parsed_text is None
-
-        doc.parsed_text = ["chunk1", "chunk2"]
-        assert doc.parsed_text == ["chunk1", "chunk2"]
+        assert doc1.path == doc2.path
+        assert doc1.last_modified == doc2.last_modified
+        assert doc1.size == doc2.size

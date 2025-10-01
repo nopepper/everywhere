@@ -44,13 +44,10 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
     def index_document(self, doc: IndexedDocument) -> bool:
         """Index a document."""
         publish(IndexingStarted(path=doc.path))
+        success = False
         try:
-            if doc.parsed_text:
-                text_chunks = self.chunker.chunk(doc.parsed_text)
-            else:
-                parsed_text = self.parser.parse(doc.path)
-                text_chunks = self.chunker.chunk(parsed_text)
-                doc.parsed_text = parsed_text
+            parsed_text = self.parser.parse(doc.path)
+            text_chunks = self.chunker.chunk(parsed_text)
 
             if not text_chunks:
                 return False
@@ -60,11 +57,12 @@ class EmbeddingSearchProvider(BaseModel, SearchProvider):
                 emb = emb / np.linalg.norm(emb)
                 self._index.add(doc.path, emb)
 
+            success = True
             return True
         except Exception:
             return False
         finally:
-            publish(IndexingFinished(path=doc.path, success=True))
+            publish(IndexingFinished(path=doc.path, success=success))
 
     def remove_document(self, path: Path) -> bool:
         """Remove a document from the embedding index."""

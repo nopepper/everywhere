@@ -74,7 +74,7 @@ uv run everywhere
 
 ## Roadmap
 
-- [ ] Add more search providers
+- [x] Add more search providers
   - [x] Full-text indexing (Tantivy)
   - [x] PDF search (text only)
   - [x] PDF search (OCR)
@@ -96,8 +96,8 @@ uv run everywhere
   - [x] Normalize embeddings
   - [x] Chunking upgrades
   - [ ] Optional reranking
-- [ ] Improve reliability
-  - [ ] Add tests
+- [x] Improve reliability
+  - [x] Add tests
   - [x] Add logging & events
 - [ ] Documentation & OSS
   - [x] License

@@ -162,9 +162,7 @@ class EverywhereApp(App):
         """Update the selected directories."""
         if old == new or len(new) == 0:
             return
-        if self._indexing_task:
-            self._indexing_task.cancel()
-        self._indexing_task = self.run_worker(partial(self.controller.update_selected_paths, new), thread=True)
+        self.run_worker(partial(self.controller.update_selected_paths, new), thread=True)
 
     def action_close_app(self) -> None:
         """Close the application."""

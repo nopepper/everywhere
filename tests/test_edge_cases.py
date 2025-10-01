@@ -18,7 +18,7 @@ class TestFileSystemEdgeCases:
     def test_file_deleted_during_indexing(self, temp_workspace: Path):
         """Test handling of files that are deleted while being indexed."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
         controller = SearchController(search_providers=[tantivy], doc_index=doc_index)
 
         docs_dir = temp_workspace / "docs"
@@ -48,10 +48,12 @@ class TestFileSystemEdgeCases:
     def test_file_without_extension(self, temp_workspace: Path):
         """Test handling files without extensions are indexed correctly."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
-        doc_index = DocumentIndex(
-            state_path=temp_workspace / "index.pkl", path_filter=lambda p: p.suffix in {".txt", ".md"}
-        )
-        controller = SearchController(search_providers=[tantivy], doc_index=doc_index)
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
+
+        def path_filter(p: Path) -> bool:
+            return p.suffix in {".txt", ".md"}
+
+        controller = SearchController(search_providers=[tantivy], doc_index=doc_index, path_filter=path_filter)
 
         docs_dir = temp_workspace / "docs"
         docs_dir.mkdir()
@@ -77,7 +79,7 @@ class TestFileSystemEdgeCases:
     def test_very_long_file_path(self, temp_workspace: Path):
         """Test handling of very long file paths."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
         controller = SearchController(search_providers=[tantivy], doc_index=doc_index)
 
         deep_dir = temp_workspace / "a" / "b" / "c" / "d" / "e" / "f" / "g"
@@ -99,7 +101,7 @@ class TestFileSystemEdgeCases:
     def test_file_modified_rapidly(self, temp_workspace: Path):
         """Test handling of files that are modified very quickly."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
         controller = SearchController(search_providers=[tantivy], doc_index=doc_index)
 
         docs_dir = temp_workspace / "docs"
@@ -306,7 +308,7 @@ class TestConcurrencyEdgeCases:
         """Test searching while indexing is in progress."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
         embedding = EmbeddingSearchProvider(ann_cache_dir=temp_workspace / "ann")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
         controller = SearchController(search_providers=[tantivy, embedding], doc_index=doc_index)
 
         docs_dir = temp_workspace / "docs"
@@ -329,7 +331,7 @@ class TestConcurrencyEdgeCases:
     def test_multiple_index_updates(self, temp_workspace: Path):
         """Test multiple rapid index updates."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
         controller = SearchController(search_providers=[tantivy], doc_index=doc_index)
 
         docs_dir = temp_workspace / "docs"

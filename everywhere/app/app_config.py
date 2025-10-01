@@ -22,9 +22,14 @@ class AppConfig(BaseModel):
 def build_controller(config: AppConfig) -> SearchController:
     """Build the search controller."""
     supported_filetypes = config.embedding_search.parser.supported_types | config.tantivy_search.parser.supported_types
-    doc_index = DocumentIndex(path_filter=lambda p: p.suffix.strip(".") in supported_filetypes)
+
+    def path_filter(p: Path) -> bool:
+        return p.suffix.strip(".") in supported_filetypes
+
+    doc_index = DocumentIndex()
 
     return SearchController(
         search_providers=[config.embedding_search, config.tantivy_search],
         doc_index=doc_index,
+        path_filter=path_filter,
     )

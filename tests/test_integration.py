@@ -19,13 +19,16 @@ class TestEndToEndWorkflow:
         """Set up a full search controller with test documents."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
         embedding = EmbeddingSearchProvider(ann_cache_dir=temp_workspace / "ann")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
 
-        doc_index = DocumentIndex(
-            state_path=temp_workspace / "index.pkl",
-            path_filter=lambda p: p.suffix in {".txt", ".md", ".py"},
+        def path_filter(p: Path) -> bool:
+            return p.suffix in {".txt", ".md", ".py"}
+
+        controller = SearchController(
+            search_providers=[tantivy, embedding],
+            doc_index=doc_index,
+            path_filter=path_filter,
         )
-
-        controller = SearchController(search_providers=[tantivy, embedding], doc_index=doc_index)
 
         docs_dir = temp_workspace / "documents"
         docs_dir.mkdir()
@@ -148,7 +151,6 @@ class TestEndToEndWorkflow:
 
     def test_embedding_persistence_and_reload(self, temp_workspace: Path):
         """Test that embedding index persists and reloads correctly."""
-        """Test that embedding index persists and reloads correctly."""
         docs_dir = temp_workspace / "documents"
         docs_dir.mkdir()
 
@@ -156,10 +158,10 @@ class TestEndToEndWorkflow:
         test_file.write_text("This content should persist across sessions")
 
         ann_dir = temp_workspace / "ann"
-        state_path = temp_workspace / "index.pkl"
+        db_path = temp_workspace / "index.db"
 
         embedding1 = EmbeddingSearchProvider(ann_cache_dir=ann_dir)
-        doc_index1 = DocumentIndex(state_path=state_path)
+        doc_index1 = DocumentIndex(db_path=db_path)
 
         controller1 = SearchController(search_providers=[embedding1], doc_index=doc_index1)
 
@@ -169,7 +171,7 @@ class TestEndToEndWorkflow:
                 pass
 
         embedding2 = EmbeddingSearchProvider(ann_cache_dir=ann_dir)
-        doc_index2 = DocumentIndex(state_path=state_path)
+        doc_index2 = DocumentIndex(db_path=db_path)
 
         controller2 = SearchController(search_providers=[embedding2], doc_index=doc_index2)
 
@@ -191,7 +193,7 @@ class TestEndToEndWorkflow:
 
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
         embedding = EmbeddingSearchProvider(ann_cache_dir=temp_workspace / "ann")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
 
         controller = SearchController(search_providers=[tantivy, embedding], doc_index=doc_index)
 
@@ -221,7 +223,7 @@ class TestEndToEndWorkflow:
 
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
         embedding = EmbeddingSearchProvider(ann_cache_dir=temp_workspace / "ann")
-        doc_index = DocumentIndex(state_path=temp_workspace / "index.pkl")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
 
         controller = SearchController(search_providers=[tantivy, embedding], doc_index=doc_index)
 

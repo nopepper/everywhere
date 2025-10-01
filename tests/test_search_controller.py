@@ -20,13 +20,16 @@ class TestSearchController:
         """Controller fixture."""
         tantivy = TantivySearchProvider(index_dir=temp_workspace / "tantivy")
         embedding = EmbeddingSearchProvider(ann_cache_dir=temp_workspace / "ann")
+        doc_index = DocumentIndex(db_path=temp_workspace / "index.db")
 
-        doc_index = DocumentIndex(
-            state_path=temp_workspace / "index.pkl",
-            path_filter=lambda p: p.suffix in {".txt", ".md"},
+        def path_filter(p: Path) -> bool:
+            return p.suffix in {".txt", ".md"}
+
+        controller = SearchController(
+            search_providers=[tantivy, embedding],
+            doc_index=doc_index,
+            path_filter=path_filter,
         )
-
-        controller = SearchController(search_providers=[tantivy, embedding], doc_index=doc_index)
 
         with controller:
             yield controller
