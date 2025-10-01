@@ -4,17 +4,18 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from textual import work
+from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Header
 
 from everywhere.app.app_config import AppConfig
-from everywhere.common.pydantic import SearchQuery
+from everywhere.common.pydantic import SearchQuery, SearchResult
 from everywhere.events import publish
 
-from ..common.debounce import AsyncDebouncedRunner
+from ..common.debounce import DebouncedRunner
 from ..events.app import AppResized
 from .commands.directory_index import DirectoryIndexCommand
 from .screens.directory_selector import DirectorySelector
@@ -27,6 +28,12 @@ if TYPE_CHECKING:
     from textual.worker import Worker
 
 DEBOUNCE_LATENCY = 0.1
+
+
+class _SearchCompleted(Message):
+    def __init__(self, results: list[SearchResult]) -> None:
+        super().__init__()
+        self.results = results
 
 
 class EverywhereApp(App):
@@ -96,7 +103,7 @@ class EverywhereApp(App):
         super().__init__()
         self._config = config
         self.controller = controller
-        self._search_debounced = AsyncDebouncedRunner(DEBOUNCE_LATENCY)
+        self._search_debounced = DebouncedRunner(DEBOUNCE_LATENCY)
         self._indexing_task: Worker | None = None
 
     def compose(self) -> ComposeResult:
@@ -126,15 +133,20 @@ class EverywhereApp(App):
         if self._indexing_task:
             self._indexing_task.cancel()
 
-    async def search_and_update(self, query: str) -> None:
-        """Search and update the results table."""
+    @work(thread=True, exclusive=True)
+    async def _launch_search(self, query: str) -> None:
         results = self.controller.search(SearchQuery(text=query))
+        self.post_message(_SearchCompleted(results))
+
+    @on(_SearchCompleted)
+    def _on_search_completed(self, event: _SearchCompleted) -> None:
         with self.batch_update():
-            self.query_one(ResultsTable).update_results(results)
+            self.query_one(ResultsTable).update_results(event.results)
 
     def on_search_bar_search_triggered(self, message: SearchBar.SearchTriggered) -> None:
         """Handle search requests from the search bar."""
-        self._search_debounced.submit(partial(self.search_and_update, message.query))
+        query = message.query
+        self._search_debounced.submit(lambda: self.call_from_thread(self._launch_search, query))
 
     def on_show(self) -> None:
         """Called when the widget becomes visible - layout is ready."""

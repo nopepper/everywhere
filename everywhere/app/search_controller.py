@@ -27,16 +27,37 @@ def normalize_scores(scores: list[float]) -> list[float]:
     return normalized.tolist()
 
 
-def normalize_results(results: list[SearchResult]) -> list[SearchResult]:
+def normalize_results(
+    results: list[SearchResult], metadata_lookup: Callable[[Path], tuple[int, int] | None]
+) -> list[SearchResult]:
     """Normalize results."""
     results_agg: list[SearchResult] = []
     for _, group in groupby(sorted(results, key=lambda x: x.value), key=lambda x: x.value):
         results_agg.append(max(group, key=lambda x: x.confidence))
 
     new_scores = normalize_scores([x.confidence for x in results_agg])
-    results_agg = [SearchResult(value=x.value, confidence=new_scores[i]) for i, x in enumerate(results_agg)]
-    results_agg.sort(key=lambda x: x.confidence, reverse=True)
-    return results_agg
+    hydrated: list[SearchResult] = []
+    for i, result in enumerate(results_agg):
+        metadata = metadata_lookup(result.value)
+        if metadata is None:
+            hydrated.append(
+                SearchResult(
+                    value=result.value,
+                    confidence=new_scores[i],
+                )
+            )
+            continue
+        size_bytes, last_modified_ns = metadata
+        hydrated.append(
+            SearchResult(
+                value=result.value,
+                confidence=new_scores[i],
+                size_bytes=size_bytes,
+                last_modified_ns=last_modified_ns,
+            )
+        )
+    hydrated.sort(key=lambda x: x.confidence, reverse=True)
+    return hydrated
 
 
 class SearchController:
@@ -79,7 +100,7 @@ class SearchController:
         """Stop the search provider."""
         self.doc_index.save()
         self.doc_index.close()
-        self._executor.shutdown(wait=True)
+        self._executor.shutdown(wait=False, cancel_futures=True)
         self._stack.close()
 
     def _remove_document(self, path: Path, provider_id: str) -> None:
@@ -157,4 +178,4 @@ class SearchController:
         """Search for a query."""
         results_nested = [provider.search(query) for provider in self.search_providers]
         results = list(flatten(results_nested))
-        return normalize_results(results)
+        return normalize_results(results, self.doc_index.get_metadata)

@@ -11,7 +11,9 @@ from ...events import add_callback
 from ...events.app import AppResized
 
 
-def _format_size(n: int) -> str:
+def _format_size(n: int | None) -> str:
+    if n is None:
+        return ""
     if n == 0:
         return "0 B"
     units = ["B", "KB", "MB", "GB", "TB"]
@@ -25,16 +27,18 @@ def _format_size(n: int) -> str:
         return f"{s:.1f} {units[i]}"
 
 
-def _format_date(ns: int) -> str:
-    return datetime.fromtimestamp(ns / 1_000_000_000).strftime("%Y-%m-%d %H:%M:%S")
-
-
 def _confidence_chip(p: float) -> Text:
     p = max(0.0, min(1.0, p * p))
     r = round(208 + (0 - 208) * p)
     g = round(208 + (255 - 208) * p)
     b = round(208 + (0 - 208) * p)
     return Text("  ", style=f"on #{r:02x}{g:02x}{b:02x}")
+
+
+def _format_date(ns: int | None) -> str:
+    if ns is None:
+        return ""
+    return datetime.fromtimestamp(ns / 1_000_000_000).strftime("%Y-%m-%d %H:%M:%S")
 
 
 DEBOUNCE_LATENCY = 0.1
@@ -77,16 +81,15 @@ class ResultsTable(DataTable):
         """Handle search results."""
         for i, result in enumerate(results):
             path = result.value
-            if not path.exists():
-                continue
             confidence_label = _confidence_chip(result.confidence)
-            stat = path.stat()
+            size_label = _format_size(result.size_bytes)
+            date_label = _format_date(result.last_modified_ns)
             new_col_values = [
                 confidence_label,
                 path.name,
                 str(path),
-                _format_size(stat.st_size),
-                _format_date(stat.st_mtime_ns),
+                size_label,
+                date_label,
             ]
             if i < self.row_count:
                 old_col_values = self.get_row_at(i)

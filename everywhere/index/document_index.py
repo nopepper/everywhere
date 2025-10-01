@@ -47,7 +47,8 @@ class DocumentIndex:
         self.conn.execute("PRAGMA journal_mode=WAL")
 
         # Create table if it doesn't exist
-        self.conn.execute("""
+        self.conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS indexed_documents (
                 path TEXT NOT NULL,
                 last_modified REAL NOT NULL,
@@ -55,7 +56,8 @@ class DocumentIndex:
                 provider_id TEXT NOT NULL,
                 PRIMARY KEY (path, provider_id)
             )
-        """)
+        """
+        )
         self.conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_path ON indexed_documents(path)
         """)
@@ -77,9 +79,21 @@ class DocumentIndex:
     def get_rows_for_path(self, path: Path) -> list[tuple[float, int, str]]:
         """Get all index entries for a path. Returns list of (last_modified, size, provider_id)."""
         rows = self.conn.execute(
-            "SELECT last_modified, size, provider_id FROM indexed_documents WHERE path = ?", (str(path),)
+            "SELECT last_modified, size, provider_id FROM indexed_documents WHERE path = ?",
+            (str(path),),
         ).fetchall()
         return rows
+
+    def get_metadata(self, path: Path) -> tuple[int, int] | None:
+        """Return (size_bytes, last_modified_ns) for an indexed path if available."""
+        row = self.conn.execute(
+            "SELECT size, last_modified FROM indexed_documents WHERE path = ? LIMIT 1",
+            (str(path),),
+        ).fetchone()
+        if row is None:
+            return None
+        size, last_modified = row
+        return int(size), int(last_modified * 1_000_000_000)
 
     def has_entry(self, path: Path, last_modified: float, size: int, provider_id: str) -> bool:
         """Check if a specific entry exists."""

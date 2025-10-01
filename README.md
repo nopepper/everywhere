@@ -83,6 +83,7 @@ uv run everywhere
   - [x] Maximize throughput on CPU
   - [x] Vector database support
   - [x] Vector database saving/loading
+  - [ ] Replace RapidOCR with Docling
   - [x] File watching with [watchdog](https://github.com/gorakhargosh/watchdog)
 - [ ] Improve UX
   - [x] Indexing in background thread
@@ -93,6 +94,7 @@ uv run everywhere
   - [ ] Search provider settings
   - [ ] Fix libgl1 missing error due to RapidOCR
 - [ ] Improve quality
+  - [ ] Improve parsing and chunking using Docling
   - [x] Normalize embeddings
   - [x] Chunking upgrades
   - [ ] Optional reranking

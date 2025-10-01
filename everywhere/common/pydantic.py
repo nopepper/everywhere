@@ -22,3 +22,5 @@ class SearchResult(FrozenBaseModel):
 
     value: Path
     confidence: float
+    size_bytes: int | None = None
+    last_modified_ns: int | None = None
