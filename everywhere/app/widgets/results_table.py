@@ -79,6 +79,7 @@ class ResultsTable(DataTable):
 
     def update_results(self, results: list[SearchResult]) -> None:
         """Handle search results."""
+        results = sorted(results, key=lambda x: x.confidence, reverse=True)
         for i, result in enumerate(results):
             path = result.value
             confidence_label = _confidence_chip(result.confidence)

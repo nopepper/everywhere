@@ -167,7 +167,10 @@ class SearchController:
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""
         results_nested = [provider.search(query) for provider in self.search_providers]
+        results_nested = [normalize_results(list(results)) for results in results_nested]
         results = list(flatten(results_nested))
+        # Normalize once individually, then together
+        results = normalize_results(results)
 
         # Hydrate results with metadata from the index
         hydrated_results: list[SearchResult] = []
@@ -186,4 +189,4 @@ class SearchController:
             else:
                 hydrated_results.append(result)
 
-        return normalize_results(hydrated_results)
+        return hydrated_results
