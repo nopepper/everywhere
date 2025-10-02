@@ -1,10 +1,11 @@
 """Search orchestrator."""
 
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import groupby
 from pathlib import Path
+from threading import Event
 from typing import Any, Self
 
 import numpy as np
@@ -71,6 +72,7 @@ class SearchController:
         self._indexing_tasks: list[Future] = []
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._providers_by_id = {provider.provider_id: provider for provider in search_providers}
+        self._cancel_event = Event()
 
     @property
     def indexing_progress(self) -> tuple[int, int]:
@@ -113,18 +115,36 @@ class SearchController:
             if success:
                 self.doc_index.add(doc.path, doc.last_modified, doc.size, provider_id)
 
+    def cancel_update(self) -> None:
+        """Cancel an ongoing update_selected_paths operation."""
+        self._cancel_event.set()
+
     def update_selected_paths(self, directories: list[Path]) -> None:
-        """Update the selected paths by walking directories and reconciling with index."""
+        """Update the selected paths by walking directories and reconciling with index.
+
+        Supports cancellation via cancel_update() method.
+        """
+        # Clear any previous cancellation and set up new one
+        self._cancel_event.clear()
+
+        def check_cancelled() -> None:
+            """Check if cancellation has been requested."""
+            if self._cancel_event.is_set():
+                raise CancelledError("Update cancelled")
+
         # Cancel existing tasks and keep the ones that are not done
         self._indexing_tasks = [t for t in self._indexing_tasks if not t.cancel()]
+        check_cancelled()
 
         # Get all paths currently in the database
         indexed_paths = self.doc_index.get_all_paths()
+        check_cancelled()
 
         # Walk filesystem to get current state
         filesystem_paths: set[Path] = set()
 
         for path in walk_all_files(directories, self.path_filter):
+            check_cancelled()
             try:
                 stat = path.stat()
                 filesystem_paths.add(path)
@@ -136,12 +156,14 @@ class SearchController:
 
                 # Check for stale entries (different metadata) and schedule removals
                 for last_modified, size, provider_id in existing_rows:
+                    check_cancelled()
                     if last_modified != current_mtime or size != current_size:
                         # Stale entry - schedule removal
                         self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
 
                 # Check if each provider needs to index this file
                 for provider in self.search_providers:
+                    check_cancelled()
                     if not self.doc_index.has_entry(path, current_mtime, current_size, provider.provider_id):
                         # Not indexed or stale - schedule indexing
                         doc = IndexedDocument(
@@ -156,12 +178,16 @@ class SearchController:
             except (OSError, FileNotFoundError):
                 continue
 
+        check_cancelled()
+
         # Remove documents that no longer exist in filesystem
         for path in indexed_paths:
+            check_cancelled()
             if path not in filesystem_paths:
                 # Get all providers that have this path indexed
                 existing_rows = self.doc_index.get_rows_for_path(path)
                 for _, _, provider_id in existing_rows:
+                    check_cancelled()
                     self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
