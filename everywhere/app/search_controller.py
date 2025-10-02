@@ -1,11 +1,11 @@
 """Search orchestrator."""
 
+import threading
 from collections.abc import Callable
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import groupby
 from pathlib import Path
-from threading import Event
 from typing import Any, Self
 
 import numpy as np
@@ -55,49 +55,97 @@ def normalize_results(results: list[SearchResult]) -> list[SearchResult]:
     return normalized
 
 
-class SearchController:
-    """Search orchestrator service."""
+class DocumentIndexController:
+    """Document indexing orchestrator."""
 
     def __init__(
-        self,
-        search_providers: list[SearchProvider],
-        doc_index: DocumentIndex,
-        path_filter: Callable[[Path], bool] | None = None,
+        self, doc_index: DocumentIndex, search_providers: list[SearchProvider], path_filter: Callable[[Path], bool]
     ):
-        """Initialize the search controller."""
-        self.search_providers = search_providers
+        """Initialize the document index agent."""
         self.doc_index = doc_index
-        self.path_filter = path_filter
-        self._stack = ExitStack()
+        self.search_providers = search_providers
+
+        self._indexed_paths: set[Path] = set()
+        self._indexer_dirty = threading.Event()
+
         self._indexing_tasks: list[Future] = []
-        self._executor = ThreadPoolExecutor(max_workers=1)
         self._providers_by_id = {provider.provider_id: provider for provider in search_providers}
-        self._cancel_event = Event()
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._path_filter = path_filter
+        self._indexer_thread = threading.Thread(target=self._indexer, daemon=True)
+        self._indexer_thread.start()
 
-    @property
-    def indexing_progress(self) -> tuple[int, int]:
-        """Indexing progress."""
-        total = len(self._indexing_tasks)
-        finished = sum(1 for task in self._indexing_tasks if task.done())
-        return total, finished
+    def _check_cancelled(self) -> None:
+        """Check if cancellation has been requested."""
+        if self._indexer_dirty.is_set():
+            raise CancelledError("Update cancelled")
 
-    @property
-    def indexed_paths(self) -> list[Path]:
-        """Indexed paths."""
-        return sorted(self.doc_index.get_all_paths())
+    def _indexer(self) -> None:
+        """Indexer thread."""
+        while True:
+            self._indexer_dirty.wait()
+            try:
+                self._indexing_tasks = [t for t in self._indexing_tasks if not t.cancel()]
+                for t in self._indexing_tasks:
+                    t.result()
+                self._indexer_dirty.clear()
+                self._sync()
+            except CancelledError:
+                continue
+            except Exception as e:
+                print(f"Error in indexer: {e}")
+                continue
 
-    def __enter__(self) -> Self:
-        """Start the search provider."""
-        self.search_providers = [self._stack.enter_context(provider) for provider in self.search_providers]
-        self._providers_by_id = {provider.provider_id: provider for provider in self.search_providers}
-        return self
+    def _sync(self) -> None:
+        """Update the selected paths by walking directories and reconciling with index.
 
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
-        """Stop the search provider."""
-        self.doc_index.save()
-        self.doc_index.close()
-        self._executor.shutdown(wait=False, cancel_futures=True)
-        self._stack.close()
+        Supports cancellation via cancel_update() method.
+        """
+        self._check_cancelled()
+        indexed_paths = self.doc_index.get_all_paths()
+        self._check_cancelled()
+
+        filesystem_paths: set[Path] = set()
+
+        for path in walk_all_files(self._indexed_paths, self._path_filter):
+            self._check_cancelled()
+            try:
+                stat = path.stat()
+                filesystem_paths.add(path)
+                current_mtime = stat.st_mtime
+                current_size = stat.st_size
+
+                existing_rows = self.doc_index.get_rows_for_path(path)
+
+                for last_modified, size, provider_id in existing_rows:
+                    self._check_cancelled()
+                    if last_modified != current_mtime or size != current_size:
+                        self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
+
+                for provider in self.search_providers:
+                    self._check_cancelled()
+                    if not self.doc_index.has_entry(path, current_mtime, current_size, provider.provider_id):
+                        doc = IndexedDocument(
+                            path=path,
+                            last_modified=current_mtime,
+                            size=current_size,
+                        )
+                        self._indexing_tasks.append(
+                            self._executor.submit(self._index_document, doc, provider.provider_id)
+                        )
+
+            except (OSError, FileNotFoundError):
+                continue
+
+        self._check_cancelled()
+
+        for path in indexed_paths:
+            self._check_cancelled()
+            if path not in filesystem_paths:
+                existing_rows = self.doc_index.get_rows_for_path(path)
+                for _, _, provider_id in existing_rows:
+                    self._check_cancelled()
+                    self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
 
     def _remove_document(self, path: Path, provider_id: str) -> None:
         """Remove a document from a provider and the index."""
@@ -115,80 +163,55 @@ class SearchController:
             if success:
                 self.doc_index.add(doc.path, doc.last_modified, doc.size, provider_id)
 
-    def cancel_update(self) -> None:
-        """Cancel an ongoing update_selected_paths operation."""
-        self._cancel_event.set()
+    @property
+    def indexing_progress(self) -> tuple[int, int]:
+        """Indexing progress."""
+        total = len(self._indexing_tasks)
+        finished = sum(1 for task in self._indexing_tasks if task.done())
+        return total, finished
 
     def update_selected_paths(self, directories: list[Path]) -> None:
-        """Update the selected paths by walking directories and reconciling with index.
+        """Update the selected paths."""
+        self._indexed_paths = set(directories)
+        self._indexer_dirty.set()
 
-        Supports cancellation via cancel_update() method.
-        """
-        # Clear any previous cancellation and set up new one
-        self._cancel_event.clear()
 
-        def check_cancelled() -> None:
-            """Check if cancellation has been requested."""
-            if self._cancel_event.is_set():
-                raise CancelledError("Update cancelled")
+class SearchController:
+    """Search orchestrator service."""
 
-        # Cancel existing tasks and keep the ones that are not done
-        self._indexing_tasks = [t for t in self._indexing_tasks if not t.cancel()]
-        check_cancelled()
+    def __init__(
+        self,
+        search_providers: list[SearchProvider],
+        doc_index: DocumentIndex,
+        path_filter: Callable[[Path], bool],
+    ):
+        """Initialize the search controller."""
+        self.search_providers = search_providers
+        self.doc_index = doc_index
+        self.index_agent = DocumentIndexController(doc_index, search_providers, path_filter)
+        self._stack = ExitStack()
 
-        # Get all paths currently in the database
-        indexed_paths = self.doc_index.get_all_paths()
-        check_cancelled()
+    @property
+    def indexing_progress(self) -> tuple[int, int]:
+        """Indexing progress."""
+        return self.index_agent.indexing_progress
 
-        # Walk filesystem to get current state
-        filesystem_paths: set[Path] = set()
+    def __enter__(self) -> Self:
+        """Start the search provider."""
+        self.search_providers = [self._stack.enter_context(provider) for provider in self.search_providers]
+        self._providers_by_id = {provider.provider_id: provider for provider in self.search_providers}
+        return self
 
-        for path in walk_all_files(directories, self.path_filter):
-            check_cancelled()
-            try:
-                stat = path.stat()
-                filesystem_paths.add(path)
-                current_mtime = stat.st_mtime
-                current_size = stat.st_size
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        """Stop the search provider."""
+        self.doc_index.save()
+        self.doc_index.close()
+        self.index_agent._executor.shutdown(wait=False, cancel_futures=True)
+        self._stack.close()
 
-                # Get existing index entries for this path
-                existing_rows = self.doc_index.get_rows_for_path(path)
-
-                # Check for stale entries (different metadata) and schedule removals
-                for last_modified, size, provider_id in existing_rows:
-                    check_cancelled()
-                    if last_modified != current_mtime or size != current_size:
-                        # Stale entry - schedule removal
-                        self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
-
-                # Check if each provider needs to index this file
-                for provider in self.search_providers:
-                    check_cancelled()
-                    if not self.doc_index.has_entry(path, current_mtime, current_size, provider.provider_id):
-                        # Not indexed or stale - schedule indexing
-                        doc = IndexedDocument(
-                            path=path,
-                            last_modified=current_mtime,
-                            size=current_size,
-                        )
-                        self._indexing_tasks.append(
-                            self._executor.submit(self._index_document, doc, provider.provider_id)
-                        )
-
-            except (OSError, FileNotFoundError):
-                continue
-
-        check_cancelled()
-
-        # Remove documents that no longer exist in filesystem
-        for path in indexed_paths:
-            check_cancelled()
-            if path not in filesystem_paths:
-                # Get all providers that have this path indexed
-                existing_rows = self.doc_index.get_rows_for_path(path)
-                for _, _, provider_id in existing_rows:
-                    check_cancelled()
-                    self._indexing_tasks.append(self._executor.submit(self._remove_document, path, provider_id))
+    def update_selected_paths(self, directories: list[Path]) -> None:
+        """Update the selected paths."""
+        self.index_agent.update_selected_paths(directories)
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search for a query."""

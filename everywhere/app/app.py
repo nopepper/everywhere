@@ -1,6 +1,5 @@
 """Application entry point."""
 
-from functools import partial
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -148,7 +147,7 @@ class EverywhereApp(App):
         """Handle terminal resize."""
         publish(AppResized(width=self.console.size.width, height=self.console.size.height))
 
-    @work
+    @work(exclusive=True)
     async def action_select_directories(self) -> None:
         """Open the directory selection dialog."""
         current_paths = self.selected_directories
@@ -169,13 +168,7 @@ class EverywhereApp(App):
         """Update the selected directories."""
         if old == new or len(new) == 0:
             return
-        # Cancel any ongoing update before starting a new one
-        self.controller.cancel_update()
-        self.run_worker(
-            partial(self.controller.update_selected_paths, new),
-            thread=True,
-            exclusive=True,
-        )
+        self.controller.update_selected_paths(new)
 
     def action_close_app(self) -> None:
         """Close the application."""

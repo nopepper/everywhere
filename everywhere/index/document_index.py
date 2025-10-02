@@ -20,7 +20,7 @@ class IndexedDocument:
     size: int
 
 
-def walk_all_files(directories: list[Path], path_filter: Callable[[Path], bool] | None = None) -> Iterable[Path]:
+def walk_all_files(directories: Iterable[Path], path_filter: Callable[[Path], bool] | None = None) -> Iterable[Path]:
     """Walk all files in directories."""
     scanned_files = flatten([(p for p in fs_dir.rglob("*") if p.is_file()) for fs_dir in directories])
     scanned_files = (p for p in scanned_files if os.access(p, os.R_OK))
